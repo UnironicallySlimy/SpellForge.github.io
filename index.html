@@ -72,7 +72,6 @@ const DEF_RESOLUTIONS = [
   { id: "instant", name: "Instant", configFields: [] },
   {
     id: "projectile", name: "Projectile", configFields: [
-      { key: "prefab", label: "Prefab", type: "text" },
       { key: "speed", label: "Speed", type: "number" },
       { key: "travel", label: "Travel", type: "select", options: ["linear", "homing", "arc"] },
       { key: "max_range", label: "Max Range", type: "number" },
@@ -81,20 +80,16 @@ const DEF_RESOLUTIONS = [
     ],
   },
   {
-    id: "animation_trigger", name: "Animation Trigger", configFields: [
-      { key: "visuals", label: "Visuals Prefab", type: "text" },
-    ],
+    id: "animation_trigger", name: "Animation Trigger", configFields: [],
   },
   {
     id: "lingering", name: "Lingering", configFields: [
       { key: "duration", label: "Duration (s)", type: "number" },
       { key: "tick_rate", label: "Tick Rate (s)", type: "number" },
-      { key: "visuals", label: "Visuals Prefab", type: "text" },
     ],
   },
   {
     id: "placed", name: "Placed", configFields: [
-      { key: "prefab", label: "Prefab", type: "text" },
       { key: "duration", label: "Duration (s)", type: "number" },
       { key: "trigger", label: "Trigger", type: "select", options: ["passive", "pulse", "on_enter"] },
       { key: "tick_rate", label: "Tick Rate (s)", type: "number" },
