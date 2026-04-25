@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spell Forge</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; }
+    body { background: #080b10; overflow: hidden; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #252e3b; border-radius: 3px; }
+    select option { background: #161c25; color: #c5cdd8; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  </style>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-type="module">
+const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+// ════════════════════════════════════════════════════════════
+// REGISTRY DEFAULTS
+// ════════════════════════════════════════════════════════════
+
+const DEF_ELEMENTS = [
+  { id: "F", name: "Fire", color: "#ff6b35" },
+  { id: "W", name: "Wind", color: "#7ec8e3" },
+  { id: "E", name: "Earth", color: "#a67c52" },
+  { id: "A", name: "Arcane", color: "#b07ce8" },
+  { id: "L", name: "Lightning", color: "#f0d264" },
+  { id: "R", name: "Runic", color: "#4ecdc4" },
+  { id: "B", name: "Blight", color: "#6abf69" },
+  { id: "I", name: "Ice", color: "#85c1e9" },
+];
+
+const DEF_TARGETERS = [
+  { id: "self", name: "Self", desc: "Origin = caster position" },
+  { id: "ground", name: "Ground", desc: "Origin = clicked terrain, stencil preview" },
+  { id: "direction", name: "Direction", desc: "Origin = caster, toward cursor" },
+  { id: "target", name: "Target", desc: "Origin = clicked entity", hasRange: true },
+];
+
+const DEF_SELECTIONS = [
+  { id: "self", name: "Self", params: [] },
+  { id: "overlap", name: "Overlap", params: [] },
+  { id: "nearest_n", name: "Nearest N", params: [{ key: "n", def: "1" }] },
+  { id: "chain", name: "Chain", params: [{ key: "jumps", def: "3" }, { key: "range", def: "5" }] },
+  { id: "all_alive", name: "All Alive", params: [] },
+];
+
+const DEF_SEL_MODS = [
+  { id: "enemies", name: "Enemies" },
+  { id: "allies", name: "Allies" },
+  { id: "any", name: "Any" },
+  { id: "exclude_self", name: "Exclude Self" },
+  { id: "max", name: "Max", hasParam: true, paramKey: "n", def: "3" },
+  { id: "nearest", name: "Sort Nearest" },
+  { id: "furthest", name: "Sort Furthest" },
+  { id: "lowest_hp", name: "Sort Lowest HP" },
+  { id: "highest_hp", name: "Sort Highest HP" },
+];
+
+const DEF_RESOLUTIONS = [
+  { id: "instant", name: "Instant", configFields: [] },
+  {
+    id: "projectile", name: "Projectile", configFields: [
+      { key: "prefab", label: "Prefab", type: "text" },
+      { key: "speed", label: "Speed", type: "number" },
+      { key: "travel", label: "Travel", type: "select", options: ["linear", "homing", "arc"] },
+      { key: "max_range", label: "Max Range", type: "number" },
+      { key: "piercing", label: "Piercing", type: "number" },
+      { key: "aoe_on_impact", label: "AoE on Impact", type: "text", placeholder: "circle, 3" },
+    ],
+  },
+  {
+    id: "animation_trigger", name: "Animation Trigger", configFields: [
+      { key: "visuals", label: "Visuals Prefab", type: "text" },
+    ],
+  },
+  {
+    id: "lingering", name: "Lingering", configFields: [
+      { key: "duration", label: "Duration (s)", type: "number" },
+      { key: "tick_rate", label: "Tick Rate (s)", type: "number" },
+      { key: "visuals", label: "Visuals Prefab", type: "text" },
+    ],
+  },
+  {
+    id: "placed", name: "Placed", configFields: [
+      { key: "prefab", label: "Prefab", type: "text" },
+      { key: "duration", label: "Duration (s)", type: "number" },
+      { key: "trigger", label: "Trigger", type: "select", options: ["passive", "pulse", "on_enter"] },
+      { key: "tick_rate", label: "Tick Rate (s)", type: "number" },
+      { key: "max_activations", label: "Max Activations", type: "number" },
+    ],
+  },
+];
+
+const DEF_KEYWORDS = [
+  { id: "Damage", params: [{ key: "amount", ph: "5 + 3 * F" }, { key: "type", ph: "fire" }] },
+  { id: "DoT", params: [{ key: "damage_per_tick", ph: "2" }, { key: "duration", ph: "3" }, { key: "type", ph: "fire" }] },
+  { id: "Slow", params: [{ key: "amount_pct", ph: "30" }, { key: "duration", ph: "3" }] },
+  { id: "Stun", params: [{ key: "duration", ph: "1.5" }] },
+  { id: "Knockback", params: [{ key: "force", ph: "4" }] },
+  { id: "Pull", params: [{ key: "force", ph: "4" }] },
+  { id: "Root", params: [{ key: "duration", ph: "2" }] },
+  { id: "Heal", params: [{ key: "amount", ph: "5 + 2 * E" }] },
+  { id: "Shield", params: [{ key: "amount", ph: "10" }, { key: "duration", ph: "5" }] },
+];
+
+const DEF_SHAPES = ["circle", "cone", "line"];
+const EXCESS_OPS = ["add", "sub", "mul", "set"];
+const EMPTY_REG = { elements: {}, targeters: {}, selections: {}, selMods: {}, resolutions: {}, keywords: {}, shapes: {} };
+
+// ════════════════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════════════════
+
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const objToArr = (obj) => obj ? Object.values(obj) : [];
+const objKeys = (obj) => obj ? Object.keys(obj) : [];
+
+function makeSpell() {
+  return {
+    id: uid(), name: "", orbs: {}, hasStencil: false,
+    stencilShape: "circle", stencilScale: "1",
+    targeter: "self", targeterRange: "8",
+    selStrategy: "overlap", selParams: {},
+    selMods: [], selModParams: {},
+    resolution: "instant", config: {},
+    keywords: [], excess: [], flavor: "",
+  };
+}
+
+function toYaml(s, reg) {
+  const L = [];
+  L.push("- name: " + (s.name || "Unnamed"));
+  const orbs = Object.entries(s.orbs || {}).filter(([, v]) => v > 0);
+  if (orbs.length) L.push("  orbs: { " + orbs.map(([k, v]) => k + ": " + v).join(", ") + " }");
+  if (s.hasStencil && s.stencilShape) L.push("  stencil: " + s.stencilShape + ", " + (s.stencilScale || 1));
+  let t = s.targeter;
+  if (t === "target" && s.targeterRange) t = "target(range=" + s.targeterRange + ")";
+  L.push("  targeter: " + t);
+  let sel = s.selStrategy;
+  const sd = reg.selections.find((x) => x.id === sel);
+  if (sel === "nearest_n") sel = "nearest_n(" + (s.selParams && s.selParams.n || 1) + ")";
+  else if (sel === "chain") sel = "chain(" + (s.selParams && s.selParams.jumps || 3) + ", " + (s.selParams && s.selParams.range || 5) + ")";
+  else if (sd && sd.params && sd.params.length) {
+    const pp = sd.params.map((p) => (s.selParams && s.selParams[p.key]) || p.def).join(", ");
+    sel = sel + "(" + pp + ")";
+  }
+  for (const m of s.selMods || []) {
+    const md = reg.selMods.find((x) => x.id === m);
+    if (md && md.hasParam) sel += " + " + m + "(" + ((s.selModParams && s.selModParams[m]) || md.def || "") + ")";
+    else sel += " + " + m;
+  }
+  L.push("  selection: " + sel);
+  L.push("  resolution: " + s.resolution);
+  const cfg = Object.entries(s.config || {}).filter(([, v]) => v !== "" && v != null);
+  if (cfg.length) { L.push("  config:"); cfg.forEach(([k, v]) => L.push("    " + k + ": " + v)); }
+  if (s.keywords && s.keywords.length) {
+    L.push("  keywords:");
+    s.keywords.forEach((kw) => {
+      const pp = Object.entries(kw.params || {}).filter(([, v]) => v !== "").map(([k, v]) => k + "=" + v).join(", ");
+      let line = kw.type + "(" + pp + ")";
+      if (kw.chance) line += " + Chance(" + kw.chance + ")";
+      L.push("    - " + line);
+    });
+  }
+  const exc = (s.excess || []).filter((e) => e.ops && e.ops.length > 0);
+  if (exc.length) {
+    L.push("  excess:");
+    exc.forEach((e) => {
+      const ops = e.ops.map((o) => o.op + " " + o.target + " " + o.scalar).join(" + ");
+      L.push("    " + e.element + ": " + ops);
+    });
+  }
+  if (s.flavor) L.push('  flavor: "' + s.flavor + '"');
+  return L.join("\n");
+}
+
+// ════════════════════════════════════════════════════════════
+// STYLES
+// ════════════════════════════════════════════════════════════
+
+const C = {
+  bg: "#080b10", surface: "#0f1319", surface2: "#161c25", surface3: "#1c2430",
+  border: "#252e3b", borderLight: "#2f3b4d", text: "#c5cdd8", textDim: "#6b7a8d",
+  accent: "#d4954a", accentDim: "#a06e2e", danger: "#c94444", success: "#3d9e6b",
+};
+const css = {
+  input: { background: C.surface2, border: "1px solid " + C.border, borderRadius: 4, color: C.text, padding: "5px 8px", fontSize: 13, outline: "none", width: "100%", fontFamily: "inherit" },
+  select: { background: C.surface2, border: "1px solid " + C.border, borderRadius: 4, color: C.text, padding: "5px 8px", fontSize: 13, outline: "none", fontFamily: "inherit", cursor: "pointer" },
+  btn: { background: C.surface3, border: "1px solid " + C.border, borderRadius: 4, color: C.text, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" },
+  btnAccent: { background: C.accentDim, border: "1px solid " + C.accent, borderRadius: 4, color: "#fff", padding: "5px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" },
+  btnDanger: { background: "transparent", border: "none", color: C.danger, cursor: "pointer", fontSize: 16, padding: "2px 6px", fontFamily: "inherit" },
+  section: { marginBottom: 16, padding: 12, background: C.surface, borderRadius: 6, border: "1px solid " + C.border },
+  sectionTitle: { fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: C.accent, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 },
+  row: { display: "flex", gap: 8, alignItems: "center", marginBottom: 6 },
+  label: { fontSize: 12, color: C.textDim, minWidth: 60 },
+};
+
+// ════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ════════════════════════════════════════════════════════════
+
+function SpellForge() {
+  // ── Firebase state ──
+  const [fbConfig, setFbConfig] = useState(null);
+  const [connected, setConnected] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
+  const [configInput, setConfigInput] = useState("");
+  const [configError, setConfigError] = useState("");
+  const dbRef = useRef(null);
+
+  // ── App state ──
+  const [spells, setSpells] = useState([]);
+  const [draft, setDraft] = useState(makeSpell);
+  const [selectedId, setSelectedId] = useState(null);
+  const [view, setView] = useState("editor");
+  const [regTab, setRegTab] = useState("elements");
+  const [toast, setToast] = useState(null);
+  const [customReg, setCustomReg] = useState(EMPTY_REG);
+  const [removedDefs, setRemovedDefs] = useState(EMPTY_REG);
+  const [showRemoved, setShowRemoved] = useState(false);
+  const listenersRef = useRef(false);
+
+  const reg = useMemo(() => {
+    const removed = (cat) => objKeys(removedDefs[cat] || {});
+    const filterDef = (arr, cat) => arr.filter((x) => !removed(cat).includes(x.id || x));
+    return {
+      elements: [...filterDef(DEF_ELEMENTS, "elements"), ...objToArr(customReg.elements)],
+      targeters: [...filterDef(DEF_TARGETERS, "targeters"), ...objToArr(customReg.targeters)],
+      selections: [...filterDef(DEF_SELECTIONS, "selections"), ...objToArr(customReg.selections)],
+      selMods: [...filterDef(DEF_SEL_MODS, "selMods"), ...objToArr(customReg.selMods)],
+      resolutions: [...filterDef(DEF_RESOLUTIONS, "resolutions"), ...objToArr(customReg.resolutions)],
+      keywords: [...filterDef(DEF_KEYWORDS, "keywords"), ...objToArr(customReg.keywords)],
+      shapes: [...filterDef(DEF_SHAPES, "shapes"), ...objKeys(customReg.shapes)],
+    };
+  }, [customReg, removedDefs]);
+
+  const flash = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2000); };
+
+  // ── Firebase init ──
+  const initFirebase = useCallback((cfg) => {
+    try {
+      if (!firebase.apps.length) firebase.initializeApp(cfg);
+      dbRef.current = firebase.database();
+      setConnected(true);
+      setFbConfig(cfg);
+      localStorage.setItem("spellforge:fbconfig", JSON.stringify(cfg));
+
+      if (!listenersRef.current) {
+        listenersRef.current = true;
+
+        // Listen to spells
+        dbRef.current.ref("spellforge/spells").on("value", (snap) => {
+          const data = snap.val();
+          const arr = data ? Object.values(data) : [];
+          // Firebase strips empty arrays/objects, so sanitize
+          const clean = arr.map((s) => ({
+            ...makeSpell(), ...s,
+            orbs: s.orbs || {},
+            selMods: s.selMods || [],
+            selParams: s.selParams || {},
+            selModParams: s.selModParams || {},
+            config: s.config || {},
+            keywords: (s.keywords || []).map((k) => ({ ...k, params: k.params || {} })),
+            excess: (s.excess || []).map((e) => ({ ...e, ops: e.ops || [] })),
+          }));
+          setSpells(clean);
+        });
+
+        // Listen to custom registry
+        dbRef.current.ref("spellforge/customRegistry").on("value", (snap) => {
+          const data = snap.val();
+          if (data) {
+            setCustomReg({
+              elements: data.elements || {},
+              targeters: data.targeters || {},
+              selections: data.selections || {},
+              selMods: data.selMods || {},
+              resolutions: data.resolutions || {},
+              keywords: data.keywords || {},
+              shapes: data.shapes || {},
+            });
+          } else {
+            setCustomReg(EMPTY_REG);
+          }
+        });
+
+        // Listen to removed defaults
+        dbRef.current.ref("spellforge/removedDefaults").on("value", (snap) => {
+          const data = snap.val();
+          if (data) {
+            setRemovedDefs({
+              elements: data.elements || {},
+              targeters: data.targeters || {},
+              selections: data.selections || {},
+              selMods: data.selMods || {},
+              resolutions: data.resolutions || {},
+              keywords: data.keywords || {},
+              shapes: data.shapes || {},
+            });
+          } else {
+            setRemovedDefs(EMPTY_REG);
+          }
+        });
+      }
+    } catch (e) {
+      setConfigError("Failed to connect: " + e.message);
+      setConnected(false);
+    }
+  }, []);
+
+  // Check for saved config on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("spellforge:fbconfig");
+    if (saved) {
+      try { initFirebase(JSON.parse(saved)); }
+      catch { setShowSetup(true); }
+    } else {
+      setShowSetup(true);
+    }
+  }, [initFirebase]);
+
+  const saveConfig = () => {
+    setConfigError("");
+    try {
+      // Handle pasted config - try to extract the object
+      let input = configInput.trim();
+      // Strip surrounding JS if they pasted the full snippet
+      const match = input.match(/\{[\s\S]*\}/);
+      if (match) input = match[0];
+      // Make it valid JSON (Firebase console gives JS object syntax with unquoted keys)
+      // Only quote keys at the start of lines to avoid breaking colons inside string values
+      input = input.split('\n').map(function(line) {
+        return line.replace(/^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:/, function(m, key) {
+          return m.replace(key, '"' + key + '"');
+        });
+      }).join('\n');
+      input = input.replace(/,\s*}/g, '}');
+      const cfg = JSON.parse(input);
+      if (!cfg.databaseURL && !cfg.projectId) {
+        setConfigError("Missing databaseURL or projectId. Make sure you copied the full config.");
+        return;
+      }
+      initFirebase(cfg);
+      setShowSetup(false);
+      flash("Connected to Firebase!");
+    } catch (e) {
+      setConfigError("Invalid config JSON: " + e.message);
+    }
+  };
+
+  // ── Firebase writes ──
+  const fbSet = (path, data) => { if (dbRef.current) dbRef.current.ref(path).set(data); };
+  const fbRemove = (path) => { if (dbRef.current) dbRef.current.ref(path).remove(); };
+
+  // ── Spell ops ──
+  const newSpell = () => { const s = makeSpell(); setDraft(s); setSelectedId(null); setView("editor"); };
+  const selectSpell = (s) => { setDraft(JSON.parse(JSON.stringify(s))); setSelectedId(s.id); setView("editor"); };
+  const deleteSpell = (id) => {
+    fbRemove("spellforge/spells/" + id);
+    if (selectedId === id) newSpell();
+  };
+  const duplicateSpell = (s) => {
+    const dup = { ...JSON.parse(JSON.stringify(s)), id: uid(), name: s.name + " (copy)" };
+    fbSet("spellforge/spells/" + dup.id, dup);
+    setDraft(dup); setSelectedId(dup.id);
+  };
+  const saveSpell = () => {
+    fbSet("spellforge/spells/" + draft.id, draft);
+    setSelectedId(draft.id);
+    flash("Spell saved!");
+  };
+
+  // ── Draft helpers ──
+  const up = (f, v) => setDraft((d) => ({ ...d, [f]: v }));
+  const upOrb = (el, delta) => {
+    setDraft((d) => {
+      const orbs = { ...d.orbs }; orbs[el] = Math.max(0, (orbs[el] || 0) + delta);
+      if (orbs[el] === 0) delete orbs[el]; return { ...d, orbs };
+    });
+  };
+  const upConfig = (k, v) => setDraft((d) => ({ ...d, config: { ...d.config, [k]: v } }));
+  const toggleMod = (id) => setDraft((d) => ({ ...d, selMods: d.selMods.includes(id) ? d.selMods.filter((m) => m !== id) : [...d.selMods, id] }));
+  const upSelParam = (k, v) => setDraft((d) => ({ ...d, selParams: { ...d.selParams, [k]: v } }));
+  const upSelModParam = (id, v) => setDraft((d) => ({ ...d, selModParams: { ...d.selModParams, [id]: v } }));
+
+  const addKeyword = () => {
+    const kw = reg.keywords[0]; const params = {};
+    kw.params.forEach((p) => (params[p.key] = ""));
+    setDraft((d) => ({ ...d, keywords: [...d.keywords, { type: kw.id, params, chance: "" }] }));
+  };
+  const removeKeyword = (i) => setDraft((d) => ({ ...d, keywords: d.keywords.filter((_, j) => j !== i) }));
+  const upKeyword = (i, field, val) => {
+    setDraft((d) => {
+      const kws = [...d.keywords];
+      if (field === "type") {
+        const def = reg.keywords.find((k) => k.id === val); const params = {};
+        if (def) def.params.forEach((p) => (params[p.key] = ""));
+        kws[i] = { ...kws[i], type: val, params };
+      } else if (field === "chance") kws[i] = { ...kws[i], chance: val };
+      else kws[i] = { ...kws[i], params: { ...kws[i].params, [field]: val } };
+      return { ...d, keywords: kws };
+    });
+  };
+
+  const addExcess = () => setDraft((d) => ({ ...d, excess: [...d.excess, { element: reg.elements[0]?.id || "F", ops: [{ op: "add", target: "", scalar: "" }] }] }));
+  const removeExcess = (i) => setDraft((d) => ({ ...d, excess: d.excess.filter((_, j) => j !== i) }));
+  const upExcess = (i, f, v) => setDraft((d) => { const e = [...d.excess]; e[i] = { ...e[i], [f]: v }; return { ...d, excess: e }; });
+  const addExcessOp = (i) => setDraft((d) => { const e = [...d.excess]; e[i] = { ...e[i], ops: [...e[i].ops, { op: "add", target: "", scalar: "" }] }; return { ...d, excess: e }; });
+  const removeExcessOp = (ei, oi) => setDraft((d) => { const e = [...d.excess]; e[ei] = { ...e[ei], ops: e[ei].ops.filter((_, j) => j !== oi) }; return { ...d, excess: e }; });
+  const upExcessOp = (ei, oi, f, v) => setDraft((d) => { const e = [...d.excess]; const ops = [...e[ei].ops]; ops[oi] = { ...ops[oi], [f]: v }; e[ei] = { ...e[ei], ops }; return { ...d, excess: e }; });
+
+  const exportAll = () => { navigator.clipboard.writeText(spells.map((s) => toYaml(s, reg)).join("\n\n")).then(() => flash("Copied!")); };
+  const exportFile = () => {
+    const blob = new Blob([spells.map((s) => toYaml(s, reg)).join("\n\n")], { type: "text/yaml" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "spells.yaml"; a.click();
+    flash("Downloaded!");
+  };
+
+  const yaml = useMemo(() => toYaml(draft, reg), [draft, reg]);
+  const resDef = reg.resolutions.find((r) => r.id === draft.resolution);
+  const selDef = reg.selections.find((s) => s.id === draft.selStrategy);
+
+  // ── Registry ops (write to Firebase) ──
+  const [regForm, setRegForm] = useState({});
+  const DEF_LOOKUP = { elements: DEF_ELEMENTS, targeters: DEF_TARGETERS, selections: DEF_SELECTIONS, selMods: DEF_SEL_MODS, resolutions: DEF_RESOLUTIONS, keywords: DEF_KEYWORDS, shapes: DEF_SHAPES };
+  const isDefault = (cat, id) => cat === "shapes" ? DEF_SHAPES.includes(id) : (DEF_LOOKUP[cat] || []).some((x) => x.id === id);
+
+  const addRegItem = (cat) => {
+    if (!regForm[cat] || !regForm[cat].id) return;
+    const item = { ...regForm[cat] };
+    if (cat === "keywords") { item.params = (item.paramStr || "").split(",").filter(Boolean).map((p) => ({ key: p.trim(), ph: "" })); delete item.paramStr; }
+    if (cat === "selections") { item.params = (item.paramStr || "").split(",").filter(Boolean).map((p) => ({ key: p.trim(), def: "" })); delete item.paramStr; }
+    if (cat === "resolutions") item.configFields = [];
+    fbSet("spellforge/customRegistry/" + cat + "/" + item.id, item);
+    setRegForm((f) => ({ ...f, [cat]: {} }));
+    flash("Added!");
+  };
+
+  const removeRegItem = (cat, id) => {
+    if (isDefault(cat, id)) {
+      // Soft-delete: track in removedDefaults
+      fbSet("spellforge/removedDefaults/" + cat + "/" + id, true);
+    } else {
+      // Hard-delete custom items
+      fbRemove("spellforge/customRegistry/" + cat + "/" + id);
+    }
+    flash("Removed!");
+  };
+
+  const restoreDefault = (cat, id) => {
+    fbRemove("spellforge/removedDefaults/" + cat + "/" + id);
+    flash("Restored!");
+  };
+
+  const addShape = (name) => { if (!name) return; fbSet("spellforge/customRegistry/shapes/" + name, true); };
+
+  // Get removed defaults for display
+  const getRemovedItems = (cat) => {
+    const ids = objKeys(removedDefs[cat] || {});
+    if (cat === "shapes") return ids.filter((id) => DEF_SHAPES.includes(id));
+    return (DEF_LOOKUP[cat] || []).filter((x) => ids.includes(x.id));
+  };
+
+  // ════════════════════════════════════════════════════════════
+  // SETUP MODAL
+  // ════════════════════════════════════════════════════════════
+
+  if (showSetup && !connected) return (
+    <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", background: C.bg, color: C.text, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: 520, padding: 32, background: C.surface, borderRadius: 12, border: "1px solid " + C.border }}>
+        <h1 style={{ fontSize: 20, fontWeight: 800, color: C.accent, letterSpacing: "0.08em", marginBottom: 8 }}>SPELL FORGE</h1>
+        <p style={{ color: C.textDim, fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>
+          Connect to Firebase for shared spell storage. Your designer will see every change in real time.
+        </p>
+
+        <div style={{ background: C.surface2, borderRadius: 6, padding: 16, marginBottom: 16, fontSize: 12, color: C.textDim, lineHeight: 1.8 }}>
+          <strong style={{ color: C.text }}>Quick setup (2 min):</strong><br/>
+          1. Go to <a href="https://console.firebase.google.com" target="_blank" style={{ color: C.accent }}>console.firebase.google.com</a><br/>
+          2. Create a project (disable Google Analytics if asked)<br/>
+          3. Click the web icon {"</>"} to add a web app — copy the <code style={{ color: C.accent }}>firebaseConfig</code> object<br/>
+          4. In the sidebar go to Build → Realtime Database → Create Database<br/>
+          5. Choose a region, start in <strong>test mode</strong><br/>
+          6. Paste the config below
+        </div>
+
+        <textarea style={{
+          ...css.input, height: 140, fontFamily: "monospace", fontSize: 12, resize: "vertical",
+          marginBottom: 8,
+        }}
+          placeholder={'Paste your firebaseConfig here, e.g.:\n{\n  apiKey: "AI...",\n  authDomain: "my-project.firebaseapp.com",\n  databaseURL: "https://my-project-default-rtdb.firebaseio.com",\n  projectId: "my-project",\n  ...\n}'}
+          value={configInput} onChange={(e) => setConfigInput(e.target.value)}
+        />
+
+        {configError && <div style={{ color: C.danger, fontSize: 12, marginBottom: 8 }}>{configError}</div>}
+
+        <button style={{ ...css.btnAccent, width: "100%", padding: "10px", fontSize: 14 }} onClick={saveConfig}>
+          Connect
+        </button>
+      </div>
+    </div>
+  );
+
+  // ════════════════════════════════════════════════════════════
+  // MAIN RENDER
+  // ════════════════════════════════════════════════════════════
+
+  return (
+    <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", background: C.bg, color: C.text, height: "100vh", display: "flex", flexDirection: "column", fontSize: 13, overflow: "hidden" }}>
+
+      {toast && <div style={{ position: "fixed", top: 16, right: 16, zIndex: 999, padding: "8px 16px", background: C.accent, color: "#000", borderRadius: 6, fontSize: 12, fontWeight: 600, animation: "fadeIn 0.2s" }}>{toast}</div>}
+
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 16px", background: C.surface, borderBottom: "1px solid " + C.border, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: "0.1em", color: C.accent }}>SPELL FORGE</span>
+          <div style={{ display: "flex", gap: 2 }}>
+            <button style={{ ...css.btn, background: view === "editor" ? C.surface3 : "transparent", borderColor: view === "editor" ? C.borderLight : "transparent" }} onClick={() => setView("editor")}>Designer</button>
+            <button style={{ ...css.btn, background: view === "registry" ? C.surface3 : "transparent", borderColor: view === "registry" ? C.borderLight : "transparent" }} onClick={() => setView("registry")}>Registry</button>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: connected ? C.success : C.danger }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: connected ? C.success : C.danger, display: "inline-block", animation: connected ? "none" : "pulse 1.5s infinite" }} />
+            {connected ? "Synced" : "Offline"}
+          </div>
+          <button style={{ ...css.btn, fontSize: 11, padding: "3px 8px" }} onClick={() => setShowSetup(true)} title="Firebase settings">⚙</button>
+          <button style={css.btn} onClick={exportAll}>Copy YAML</button>
+          <button style={css.btn} onClick={exportFile}>Download .yaml</button>
+        </div>
+      </div>
+
+      {/* Config modal overlay */}
+      {showSetup && connected && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowSetup(false); }}>
+          <div style={{ width: 460, padding: 24, background: C.surface, borderRadius: 10, border: "1px solid " + C.border }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <span style={{ fontWeight: 700, color: C.accent }}>Firebase Config</span>
+              <button style={css.btnDanger} onClick={() => setShowSetup(false)}>×</button>
+            </div>
+            <textarea style={{ ...css.input, height: 120, fontFamily: "monospace", fontSize: 11, marginBottom: 8 }}
+              value={configInput || JSON.stringify(fbConfig, null, 2)} onChange={(e) => setConfigInput(e.target.value)} />
+            {configError && <div style={{ color: C.danger, fontSize: 12, marginBottom: 8 }}>{configError}</div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={css.btnAccent} onClick={saveConfig}>Reconnect</button>
+              <button style={{ ...css.btn, color: C.danger }} onClick={() => { localStorage.removeItem("spellforge:fbconfig"); location.reload(); }}>Disconnect</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+
+        {/* Spell List */}
+        <div style={{ width: 180, background: C.surface, borderRight: "1px solid " + C.border, display: "flex", flexDirection: "column", flexShrink: 0 }}>
+          <div style={{ padding: "8px 10px", borderBottom: "1px solid " + C.border }}>
+            <button style={{ ...css.btnAccent, width: "100%", fontSize: 12, padding: "6px" }} onClick={newSpell}>+ New Spell</button>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            {spells.map((s) => (
+              <div key={s.id} onClick={() => selectSpell(s)} style={{
+                padding: "8px 10px", cursor: "pointer", fontSize: 12,
+                background: s.id === selectedId ? C.surface2 : "transparent",
+                borderLeft: s.id === selectedId ? "2px solid " + C.accent : "2px solid transparent",
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+              }}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{s.name || "Unnamed"}</span>
+                <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                  <button style={{ ...css.btnDanger, fontSize: 11, padding: "0 3px" }} title="Duplicate" onClick={(e) => { e.stopPropagation(); duplicateSpell(s); }}>⧉</button>
+                  <button style={{ ...css.btnDanger, fontSize: 13, padding: "0 3px" }} title="Delete" onClick={(e) => { e.stopPropagation(); deleteSpell(s.id); }}>×</button>
+                </div>
+              </div>
+            ))}
+            {spells.length === 0 && <div style={{ padding: 12, color: C.textDim, fontSize: 11, textAlign: "center" }}>No spells yet</div>}
+          </div>
+        </div>
+
+        {view === "editor" ? (
+          <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+            <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+
+              {/* Identity */}
+              <div style={css.section}>
+                <div style={css.sectionTitle}><span>◆</span> Identity</div>
+                <div style={css.row}><span style={css.label}>Name</span><input style={css.input} value={draft.name} onChange={(e) => up("name", e.target.value)} placeholder="Spell name..." /></div>
+                <div style={css.row}><span style={css.label}>Flavor</span><input style={css.input} value={draft.flavor} onChange={(e) => up("flavor", e.target.value)} placeholder="Flavor text..." /></div>
+              </div>
+
+              {/* Orbs */}
+              <div style={css.section}>
+                <div style={css.sectionTitle}><span>◆</span> Orbs</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {reg.elements.map((el) => {
+                    const c = draft.orbs[el.id] || 0;
+                    return (
+                      <div key={el.id} style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderRadius: 4, background: c > 0 ? el.color + "18" : C.surface2, border: "1px solid " + (c > 0 ? el.color + "50" : C.border) }}>
+                        <span style={{ color: el.color, fontWeight: 700, fontSize: 12, minWidth: 14 }}>{el.id}</span>
+                        <button style={{ ...css.btn, padding: "1px 6px", fontSize: 13, lineHeight: 1 }} onClick={() => upOrb(el.id, -1)}>−</button>
+                        <span style={{ minWidth: 14, textAlign: "center", fontSize: 13, fontWeight: 600 }}>{c}</span>
+                        <button style={{ ...css.btn, padding: "1px 6px", fontSize: 13, lineHeight: 1 }} onClick={() => upOrb(el.id, 1)}>+</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Targeter */}
+              <div style={css.section}>
+                <div style={css.sectionTitle}><span>◆</span> Targeter</div>
+                <div style={css.row}><select style={{ ...css.select, flex: 1 }} value={draft.targeter} onChange={(e) => up("targeter", e.target.value)}>
+                  {reg.targeters.map((t) => <option key={t.id} value={t.id}>{t.name} — {t.desc}</option>)}
+                </select></div>
+                {draft.targeter === "target" && <div style={css.row}><span style={css.label}>Range</span><input style={{ ...css.input, width: 80 }} type="number" value={draft.targeterRange} onChange={(e) => up("targeterRange", e.target.value)} /></div>}
+              </div>
+
+              {/* Stencil */}
+              <div style={css.section}>
+                <div style={css.sectionTitle}><span>◆</span> Stencil
+                  <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 11, color: C.textDim, textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>
+                    <input type="checkbox" checked={draft.hasStencil} onChange={(e) => up("hasStencil", e.target.checked)} /> Enable
+                  </label>
+                </div>
+                {draft.hasStencil && <div style={css.row}>
+                  <span style={css.label}>Shape</span>
+                  <select style={{ ...css.select, flex: 1 }} value={draft.stencilShape} onChange={(e) => up("stencilShape", e.target.value)}>
+                    {reg.shapes.map((sh) => <option key={sh} value={sh}>{sh}</option>)}
+                  </select>
+                  <span style={css.label}>Scale</span>
+                  <input style={{ ...css.input, width: 60 }} type="number" value={draft.stencilScale} onChange={(e) => up("stencilScale", e.target.value)} />
+                </div>}
+              </div>
+
+              {/* Selection */}
+              <div style={css.section}>
+                <div style={css.sectionTitle}><span>◆</span> Selection</div>
+                <div style={css.row}><span style={css.label}>Strategy</span><select style={{ ...css.select, flex: 1 }} value={draft.selStrategy} onChange={(e) => up("selStrategy", e.target.value)}>
+                  {reg.selections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select></div>
+                {selDef && selDef.params && selDef.params.map((p) => (
+                  <div key={p.key} style={css.row}><span style={css.label}>{p.key}</span><input style={{ ...css.input, width: 80 }} value={(draft.selParams && draft.selParams[p.key]) ?? p.def ?? ""} onChange={(e) => upSelParam(p.key, e.target.value)} /></div>
+                ))}
+                <div style={{ marginTop: 8, fontSize: 11, color: C.textDim, marginBottom: 4 }}>Modifiers</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {reg.selMods.map((m) => {
+                    const on = (draft.selMods || []).includes(m.id);
+                    return (
+                      <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                        <button onClick={() => toggleMod(m.id)} style={{ ...css.btn, fontSize: 11, padding: "3px 8px", background: on ? C.accent + "25" : C.surface2, borderColor: on ? C.accent + "60" : C.border, color: on ? C.accent : C.textDim }}>{m.name}</button>
+                        {on && m.hasParam && <input style={{ ...css.input, width: 40, padding: "3px 5px", fontSize: 11 }} value={(draft.selModParams && draft.selModParams[m.id]) ?? m.def ?? ""} onChange={(e) => upSelModParam(m.id, e.target.value)} />}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Resolution */}
+              <div style={css.section}>
+                <div style={css.sectionTitle}><span>◆</span> Resolution</div>
+                <div style={css.row}><select style={{ ...css.select, flex: 1 }} value={draft.resolution} onChange={(e) => { up("resolution", e.target.value); up("config", {}); }}>
+                  {reg.resolutions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select></div>
+                {resDef && resDef.configFields && resDef.configFields.length > 0 && (
+                  <div style={{ marginTop: 6 }}>
+                    <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Config</div>
+                    {resDef.configFields.map((f) => (
+                      <div key={f.key} style={css.row}>
+                        <span style={{ ...css.label, minWidth: 90 }}>{f.label}</span>
+                        {f.type === "select" ? (
+                          <select style={{ ...css.select, flex: 1 }} value={draft.config[f.key] || ""} onChange={(e) => upConfig(f.key, e.target.value)}>
+                            <option value="">—</option>
+                            {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        ) : <input style={{ ...css.input, flex: 1 }} type={f.type || "text"} placeholder={f.placeholder || ""} value={draft.config[f.key] || ""} onChange={(e) => upConfig(f.key, e.target.value)} />}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Keywords */}
+              <div style={css.section}>
+                <div style={css.sectionTitle}><span>◆</span> Keywords <button style={{ ...css.btn, marginLeft: "auto", fontSize: 11, padding: "2px 8px" }} onClick={addKeyword}>+ Add</button></div>
+                {(draft.keywords || []).map((kw, i) => {
+                  const kwDef = reg.keywords.find((k) => k.id === kw.type);
+                  return (
+                    <div key={i} style={{ marginBottom: 8, padding: 8, background: C.surface2, borderRadius: 4, border: "1px solid " + C.border }}>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
+                        <select style={{ ...css.select, fontSize: 12, fontWeight: 600 }} value={kw.type} onChange={(e) => upKeyword(i, "type", e.target.value)}>
+                          {reg.keywords.map((k) => <option key={k.id} value={k.id}>{k.id}</option>)}
+                        </select>
+                        <div style={{ flex: 1 }} />
+                        <span style={{ fontSize: 11, color: C.textDim }}>Chance</span>
+                        <input style={{ ...css.input, width: 50, padding: "2px 5px", fontSize: 11 }} placeholder="—" value={kw.chance || ""} onChange={(e) => upKeyword(i, "chance", e.target.value)} />
+                        <button style={css.btnDanger} onClick={() => removeKeyword(i)}>×</button>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {kwDef && kwDef.params.map((p) => (
+                          <div key={p.key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <span style={{ fontSize: 11, color: C.textDim }}>{p.key}</span>
+                            <input style={{ ...css.input, width: 100, padding: "3px 6px", fontSize: 12 }} placeholder={p.ph} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+                {(!draft.keywords || draft.keywords.length === 0) && <div style={{ color: C.textDim, fontSize: 11 }}>No keywords added</div>}
+              </div>
+
+              {/* Excess */}
+              <div style={css.section}>
+                <div style={css.sectionTitle}><span>◆</span> Excess <button style={{ ...css.btn, marginLeft: "auto", fontSize: 11, padding: "2px 8px" }} onClick={addExcess}>+ Add</button></div>
+                {(draft.excess || []).map((ex, ei) => (
+                  <div key={ei} style={{ marginBottom: 8, padding: 8, background: C.surface2, borderRadius: 4, border: "1px solid " + C.border }}>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                      <select style={{ ...css.select, width: 60, fontWeight: 700 }} value={ex.element} onChange={(e) => upExcess(ei, "element", e.target.value)}>
+                        {reg.elements.map((el) => <option key={el.id} value={el.id}>{el.id}</option>)}
+                      </select>
+                      <div style={{ flex: 1 }} />
+                      <button style={{ ...css.btn, fontSize: 11, padding: "2px 6px" }} onClick={() => addExcessOp(ei)}>+ op</button>
+                      <button style={css.btnDanger} onClick={() => removeExcess(ei)}>×</button>
+                    </div>
+                    {(ex.ops || []).map((op, oi) => (
+                      <div key={oi} style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 3 }}>
+                        <select style={{ ...css.select, width: 60, fontSize: 11 }} value={op.op} onChange={(e) => upExcessOp(ei, oi, "op", e.target.value)}>
+                          {EXCESS_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                        <input style={{ ...css.input, flex: 1, fontSize: 11, padding: "3px 6px" }} placeholder="Damage.amount" value={op.target} onChange={(e) => upExcessOp(ei, oi, "target", e.target.value)} />
+                        <input style={{ ...css.input, width: 50, fontSize: 11, padding: "3px 6px" }} placeholder="2" value={op.scalar} onChange={(e) => upExcessOp(ei, oi, "scalar", e.target.value)} />
+                        <button style={{ ...css.btnDanger, fontSize: 12, padding: "0 4px" }} onClick={() => removeExcessOp(ei, oi)}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                {(!draft.excess || draft.excess.length === 0) && <div style={{ color: C.textDim, fontSize: 11 }}>No excess rules</div>}
+              </div>
+
+              <div style={{ display: "flex", gap: 8, marginBottom: 40 }}>
+                <button style={{ ...css.btnAccent, padding: "8px 24px", fontSize: 13 }} onClick={saveSpell}>
+                  {spells.some((s) => s.id === draft.id) ? "Update Spell" : "Save Spell"}
+                </button>
+                <button style={css.btn} onClick={() => { navigator.clipboard.writeText(yaml); flash("Copied!"); }}>Copy This YAML</button>
+              </div>
+            </div>
+
+            {/* YAML Preview */}
+            <div style={{ width: 320, background: C.surface, borderLeft: "1px solid " + C.border, display: "flex", flexDirection: "column", flexShrink: 0 }}>
+              <div style={{ padding: "8px 12px", borderBottom: "1px solid " + C.border, fontSize: 11, fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.08em" }}>YAML Preview</div>
+              <pre style={{ flex: 1, overflowY: "auto", padding: 12, margin: 0, fontFamily: "'Cascadia Code', 'Fira Code', monospace", fontSize: 11.5, lineHeight: 1.6, color: C.text, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{yaml}</pre>
+            </div>
+          </div>
+        ) : (
+          /* Registry */
+          <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+            <div style={{ display: "flex", gap: 4, marginBottom: 16, flexWrap: "wrap" }}>
+              {["elements", "targeters", "selections", "selMods", "resolutions", "keywords", "shapes"].map((tab) => (
+                <button key={tab} onClick={() => setRegTab(tab)} style={{ ...css.btn, fontSize: 11, padding: "5px 10px", background: regTab === tab ? C.surface3 : "transparent", borderColor: regTab === tab ? C.borderLight : "transparent", textTransform: "capitalize" }}>
+                  {tab === "selMods" ? "Sel. Modifiers" : tab}
+                </button>
+              ))}
+            </div>
+            <div style={css.section}>
+              <div style={css.sectionTitle}><span>◆</span> {regTab === "selMods" ? "Selection Modifiers" : regTab}</div>
+              {(regTab === "shapes" ? reg.shapes : reg[regTab]).map((item, i) => {
+                const id = regTab === "shapes" ? item : item.id;
+                return <div key={id || i} style={{ ...css.row, padding: "4px 8px", background: C.surface2, borderRadius: 4, marginBottom: 4 }}>
+                  {regTab === "shapes" ? (
+                    <span style={{ flex: 1 }}>{item}</span>
+                  ) : (
+                    <>
+                      <span style={{ fontWeight: 600, color: item.color || C.text, minWidth: 80 }}>{item.id}</span>
+                      <span style={{ flex: 1, color: C.textDim, fontSize: 11 }}>
+                        {item.name || ""} {item.desc ? "— " + item.desc : ""}
+                        {item.params && item.params.length > 0 && " (" + item.params.map((p) => p.key || p).join(", ") + ")"}
+                        {item.hasParam && " (" + item.paramKey + ")"}
+                      </span>
+                    </>
+                  )}
+                  <button style={css.btnDanger} onClick={() => removeRegItem(regTab, id)}>×</button>
+                </div>;
+              })}
+
+              {/* Removed defaults - restore section */}
+              {getRemovedItems(regTab).length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <button onClick={() => setShowRemoved(!showRemoved)} style={{ ...css.btn, fontSize: 11, padding: "3px 8px", color: C.textDim, width: "100%" }}>
+                    {showRemoved ? "▾" : "▸"} {getRemovedItems(regTab).length} removed — click to {showRemoved ? "hide" : "restore"}
+                  </button>
+                  {showRemoved && getRemovedItems(regTab).map((item, i) => {
+                    const id = regTab === "shapes" ? item : item.id;
+                    return <div key={id || i} style={{ ...css.row, padding: "4px 8px", background: C.danger + "10", borderRadius: 4, marginBottom: 4, marginTop: 4, border: "1px solid " + C.danger + "25" }}>
+                      {regTab === "shapes" ? (
+                        <span style={{ flex: 1, color: C.textDim, textDecoration: "line-through" }}>{item}</span>
+                      ) : (
+                        <>
+                          <span style={{ fontWeight: 600, color: C.textDim, minWidth: 80, textDecoration: "line-through" }}>{item.id}</span>
+                          <span style={{ flex: 1, color: C.textDim, fontSize: 11, textDecoration: "line-through" }}>{item.name || ""}</span>
+                        </>
+                      )}
+                      <button style={{ ...css.btn, fontSize: 11, padding: "2px 8px", color: C.success, borderColor: C.success + "40" }} onClick={() => restoreDefault(regTab, id)}>Restore</button>
+                    </div>;
+                  })}
+                </div>
+              )}
+
+              <div style={{ marginTop: 12, padding: 10, border: "1px dashed " + C.border, borderRadius: 4 }}>
+                <div style={{ fontSize: 11, color: C.textDim, marginBottom: 6 }}>Add New</div>
+                {regTab === "shapes" ? (
+                  <div style={css.row}>
+                    <input style={{ ...css.input, flex: 1 }} placeholder="Shape name..." value={(regForm.shapes && regForm.shapes.id) || ""} onChange={(e) => setRegForm((f) => ({ ...f, shapes: { id: e.target.value } }))} />
+                    <button style={css.btn} onClick={() => { addShape(regForm.shapes?.id); setRegForm((f) => ({ ...f, shapes: {} })); flash("Added!"); }}>Add</button>
+                  </div>
+                ) : regTab === "elements" ? (
+                  <div style={css.row}>
+                    <input style={{ ...css.input, width: 60 }} placeholder="ID" value={(regForm.elements && regForm.elements.id) || ""} onChange={(e) => setRegForm((f) => ({ ...f, elements: { ...f.elements, id: e.target.value } }))} />
+                    <input style={{ ...css.input, flex: 1 }} placeholder="Name" value={(regForm.elements && regForm.elements.name) || ""} onChange={(e) => setRegForm((f) => ({ ...f, elements: { ...f.elements, name: e.target.value } }))} />
+                    <input style={{ ...css.input, width: 50 }} type="color" value={(regForm.elements && regForm.elements.color) || "#888888"} onChange={(e) => setRegForm((f) => ({ ...f, elements: { ...f.elements, color: e.target.value } }))} />
+                    <button style={css.btn} onClick={() => addRegItem("elements")}>Add</button>
+                  </div>
+                ) : (
+                  <>
+                    <div style={css.row}>
+                      <input style={{ ...css.input, width: 100 }} placeholder="ID" value={(regForm[regTab] && regForm[regTab].id) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], id: e.target.value } }))} />
+                      <input style={{ ...css.input, flex: 1 }} placeholder="Name" value={(regForm[regTab] && regForm[regTab].name) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], name: e.target.value } }))} />
+                    </div>
+                    {(regTab === "targeters" || regTab === "resolutions") && <div style={css.row}><input style={{ ...css.input, flex: 1 }} placeholder="Description" value={(regForm[regTab] && regForm[regTab].desc) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], desc: e.target.value } }))} /></div>}
+                    {(regTab === "selections" || regTab === "keywords") && <div style={css.row}><input style={{ ...css.input, flex: 1 }} placeholder="Params (comma-separated)" value={(regForm[regTab] && regForm[regTab].paramStr) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], paramStr: e.target.value } }))} /></div>}
+                    {regTab === "selMods" && <div style={{ ...css.row, marginTop: 4 }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: C.textDim, cursor: "pointer" }}>
+                        <input type="checkbox" checked={(regForm[regTab] && regForm[regTab].hasParam) || false} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], hasParam: e.target.checked } }))} /> Has param
+                      </label>
+                      {regForm[regTab] && regForm[regTab].hasParam && <input style={{ ...css.input, width: 80 }} placeholder="Param key" value={(regForm[regTab] && regForm[regTab].paramKey) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], paramKey: e.target.value } }))} />}
+                    </div>}
+                    <button style={{ ...css.btn, marginTop: 6 }} onClick={() => addRegItem(regTab)}>Add</button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<SpellForge />);
+  </script>
+</body>
+</html>
