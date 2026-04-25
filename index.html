@@ -75,25 +75,20 @@ const DEF_RESOLUTIONS = [
       { key: "speed", label: "Speed", type: "number" },
       { key: "travel", label: "Travel", type: "select", options: ["linear", "homing", "arc"] },
       { key: "max_range", label: "Max Range", type: "number" },
-      { key: "piercing", label: "Piercing", type: "number" },
-      { key: "aoe_on_impact", label: "AoE on Impact", type: "text", placeholder: "circle, 3" },
+      { key: "piercing", label: "Piercing (-1 = infinite)", type: "number" },
+      { key: "aoe_on_impact", label: "AoE on Impact", type: "text", placeholder: "Circle, 3" },
     ],
   },
   {
     id: "animation_trigger", name: "Animation Trigger", configFields: [],
   },
   {
-    id: "lingering", name: "Lingering", configFields: [
-      { key: "duration", label: "Duration (s)", type: "number" },
-      { key: "tick_rate", label: "Tick Rate (s)", type: "number" },
-    ],
-  },
-  {
-    id: "placed", name: "Placed", configFields: [
+    id: "placeable", name: "Placeable", configFields: [
       { key: "duration", label: "Duration (s)", type: "number" },
       { key: "trigger", label: "Trigger", type: "select", options: ["passive", "pulse", "on_enter"] },
       { key: "tick_rate", label: "Tick Rate (s)", type: "number" },
-      { key: "max_activations", label: "Max Activations", type: "number" },
+      { key: "activate_once", label: "Activate Once", type: "checkbox" },
+      { key: "arm_time", label: "Arm Time (s)", type: "number" },
     ],
   },
 ];
@@ -110,7 +105,7 @@ const DEF_KEYWORDS = [
   { id: "Shield", params: [{ key: "amount", ph: "10" }, { key: "duration", ph: "5" }] },
 ];
 
-const DEF_SHAPES = ["circle", "cone", "line"];
+const DEF_SHAPES = ["Circle", "Cone", "Line"];
 const EXCESS_OPS = ["add", "sub", "mul", "set"];
 const EMPTY_REG = { elements: {}, targeters: {}, selections: {}, selMods: {}, resolutions: {}, keywords: {}, shapes: {} };
 
@@ -121,6 +116,7 @@ const EMPTY_REG = { elements: {}, targeters: {}, selections: {}, selMods: {}, re
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const objToArr = (obj) => obj ? Object.values(obj) : [];
 const objKeys = (obj) => obj ? Object.keys(obj) : [];
+const capitalize = (s) => s ? s.replace(/\b\w/g, (c) => c.toUpperCase()) : s;
 
 function makeSpell() {
   return {
@@ -380,8 +376,10 @@ function SpellForge() {
     setDraft(dup); setSelectedId(dup.id);
   };
   const saveSpell = () => {
-    fbSet("spellforge/spells/" + draft.id, draft);
-    setSelectedId(draft.id);
+    const toSave = { ...draft, name: capitalize(draft.name) };
+    setDraft(toSave);
+    fbSet("spellforge/spells/" + toSave.id, toSave);
+    setSelectedId(toSave.id);
     flash("Spell saved!");
   };
 
@@ -442,7 +440,7 @@ function SpellForge() {
 
   const addRegItem = (cat) => {
     if (!regForm[cat] || !regForm[cat].id) return;
-    const item = { ...regForm[cat] };
+    const item = { ...regForm[cat], id: capitalize(regForm[cat].id), name: capitalize(regForm[cat].name || "") };
     if (cat === "keywords") { item.params = (item.paramStr || "").split(",").filter(Boolean).map((p) => ({ key: p.trim(), ph: "" })); delete item.paramStr; }
     if (cat === "selections") { item.params = (item.paramStr || "").split(",").filter(Boolean).map((p) => ({ key: p.trim(), def: "" })); delete item.paramStr; }
     if (cat === "resolutions") item.configFields = [];
@@ -467,7 +465,7 @@ function SpellForge() {
     flash("Restored!");
   };
 
-  const addShape = (name) => { if (!name) return; fbSet("spellforge/customRegistry/shapes/" + name, true); };
+  const addShape = (name) => { if (!name) return; fbSet("spellforge/customRegistry/shapes/" + capitalize(name), true); };
 
   // Get removed defaults for display
   const getRemovedItems = (cat) => {
@@ -483,7 +481,7 @@ function SpellForge() {
   };
   const addConfigOption = (resId, fieldKey, value) => {
     if (!value) return;
-    fbSet("spellforge/configOptions/" + resId + "/" + fieldKey + "/" + value, true);
+    fbSet("spellforge/configOptions/" + resId + "/" + fieldKey + "/" + capitalize(value), true);
     flash("Option added!");
   };
   const removeConfigOption = (resId, fieldKey, value) => {
@@ -695,7 +693,14 @@ function SpellForge() {
                     {resDef.configFields.map((f) => (
                       <div key={f.key} style={css.row}>
                         <span style={{ ...css.label, minWidth: 90 }}>{f.label}</span>
-                        {f.type === "select" ? (
+                        {f.type === "checkbox" ? (
+                          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", flex: 1 }}>
+                            <input type="checkbox" checked={draft.config[f.key] === "true" || draft.config[f.key] === true} onChange={(e) => upConfig(f.key, e.target.checked ? "true" : "")} />
+                            <span style={{ fontSize: 12, color: draft.config[f.key] === "true" || draft.config[f.key] === true ? C.text : C.textDim }}>
+                              {draft.config[f.key] === "true" || draft.config[f.key] === true ? "Yes" : "No"}
+                            </span>
+                          </label>
+                        ) : f.type === "select" ? (
                           <div style={{ flex: 1, position: "relative" }}>
                             <input list={"dl_" + f.key} style={{ ...css.input }} value={draft.config[f.key] || ""} onChange={(e) => upConfig(f.key, e.target.value)} placeholder="Type or select..." />
                             <datalist id={"dl_" + f.key}>
@@ -752,16 +757,33 @@ function SpellForge() {
                       <button style={{ ...css.btn, fontSize: 11, padding: "2px 6px" }} onClick={() => addExcessOp(ei)}>+ op</button>
                       <button style={css.btnDanger} onClick={() => removeExcess(ei)}>×</button>
                     </div>
-                    {(ex.ops || []).map((op, oi) => (
+                    {(ex.ops || []).map((op, oi) => {
+                      // Build target options from spell's keywords + config
+                      const targetOpts = [];
+                      (draft.keywords || []).forEach((kw) => {
+                        const kwDef = reg.keywords.find((k) => k.id === kw.type);
+                        if (kwDef) kwDef.params.forEach((p) => {
+                          const t = kw.type + "." + p.key;
+                          if (!targetOpts.includes(t)) targetOpts.push(t);
+                        });
+                      });
+                      if (resDef) resDef.configFields.forEach((f) => {
+                        targetOpts.push("config." + f.key);
+                      });
+                      return (
                       <div key={oi} style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 3 }}>
                         <select style={{ ...css.select, width: 60, fontSize: 11 }} value={op.op} onChange={(e) => upExcessOp(ei, oi, "op", e.target.value)}>
                           {EXCESS_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
                         </select>
-                        <input style={{ ...css.input, flex: 1, fontSize: 11, padding: "3px 6px" }} placeholder="Damage.amount" value={op.target} onChange={(e) => upExcessOp(ei, oi, "target", e.target.value)} />
+                        <select style={{ ...css.select, flex: 1, fontSize: 11 }} value={op.target} onChange={(e) => upExcessOp(ei, oi, "target", e.target.value)}>
+                          <option value="">— Select target —</option>
+                          {targetOpts.map((t) => <option key={t} value={t}>{t}</option>)}
+                        </select>
                         <input style={{ ...css.input, width: 50, fontSize: 11, padding: "3px 6px" }} placeholder="2" value={op.scalar} onChange={(e) => upExcessOp(ei, oi, "scalar", e.target.value)} />
                         <button style={{ ...css.btnDanger, fontSize: 12, padding: "0 4px" }} onClick={() => removeExcessOp(ei, oi)}>×</button>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ))}
                 {(!draft.excess || draft.excess.length === 0) && <div style={{ color: C.textDim, fontSize: 11 }}>No excess rules</div>}
