@@ -225,6 +225,9 @@ function SpellForge() {
   const [customReg, setCustomReg] = useState(EMPTY_REG);
   const [removedDefs, setRemovedDefs] = useState(EMPTY_REG);
   const [showRemoved, setShowRemoved] = useState(false);
+  const [configOpts, setConfigOpts] = useState({});
+  const [expandedRes, setExpandedRes] = useState(null);
+  const [newOptInput, setNewOptInput] = useState({});
   const listenersRef = useRef(false);
 
   const reg = useMemo(() => {
@@ -307,6 +310,11 @@ function SpellForge() {
           } else {
             setRemovedDefs(EMPTY_REG);
           }
+        });
+
+        // Listen to custom config field options (e.g. new travel types for projectile)
+        dbRef.current.ref("spellforge/configOptions").on("value", (snap) => {
+          setConfigOpts(snap.val() || {});
         });
       }
     } catch (e) {
@@ -466,6 +474,21 @@ function SpellForge() {
     const ids = objKeys(removedDefs[cat] || {});
     if (cat === "shapes") return ids.filter((id) => DEF_SHAPES.includes(id));
     return (DEF_LOOKUP[cat] || []).filter((x) => ids.includes(x.id));
+  };
+
+  // Config field options: merge defaults with custom from Firebase
+  const getFieldOptions = (resId, fieldKey, defaultOpts) => {
+    const custom = objKeys((configOpts[resId] && configOpts[resId][fieldKey]) || {});
+    return [...(defaultOpts || []), ...custom.filter((c) => !(defaultOpts || []).includes(c))];
+  };
+  const addConfigOption = (resId, fieldKey, value) => {
+    if (!value) return;
+    fbSet("spellforge/configOptions/" + resId + "/" + fieldKey + "/" + value, true);
+    flash("Option added!");
+  };
+  const removeConfigOption = (resId, fieldKey, value) => {
+    fbRemove("spellforge/configOptions/" + resId + "/" + fieldKey + "/" + value);
+    flash("Option removed!");
   };
 
   // ════════════════════════════════════════════════════════════
@@ -676,7 +699,7 @@ function SpellForge() {
                           <div style={{ flex: 1, position: "relative" }}>
                             <input list={"dl_" + f.key} style={{ ...css.input }} value={draft.config[f.key] || ""} onChange={(e) => upConfig(f.key, e.target.value)} placeholder="Type or select..." />
                             <datalist id={"dl_" + f.key}>
-                              {f.options.map((o) => <option key={o} value={o} />)}
+                              {getFieldOptions(draft.resolution, f.key, f.options).map((o) => <option key={o} value={o} />)}
                             </datalist>
                           </div>
                         ) : <input style={{ ...css.input, flex: 1 }} type={f.type || "text"} placeholder={f.placeholder || ""} value={draft.config[f.key] || ""} onChange={(e) => upConfig(f.key, e.target.value)} />}
@@ -772,20 +795,77 @@ function SpellForge() {
               <div style={css.sectionTitle}><span>◆</span> {regTab === "selMods" ? "Selection Modifiers" : regTab}</div>
               {(regTab === "shapes" ? reg.shapes : reg[regTab]).map((item, i) => {
                 const id = regTab === "shapes" ? item : item.id;
-                return <div key={id || i} style={{ ...css.row, padding: "4px 8px", background: C.surface2, borderRadius: 4, marginBottom: 4 }}>
-                  {regTab === "shapes" ? (
-                    <span style={{ flex: 1 }}>{item}</span>
-                  ) : (
-                    <>
-                      <span style={{ fontWeight: 600, color: item.color || C.text, minWidth: 80 }}>{item.id}</span>
-                      <span style={{ flex: 1, color: C.textDim, fontSize: 11 }}>
-                        {item.name || ""} {item.desc ? "— " + item.desc : ""}
-                        {item.params && item.params.length > 0 && " (" + item.params.map((p) => p.key || p).join(", ") + ")"}
-                        {item.hasParam && " (" + item.paramKey + ")"}
-                      </span>
-                    </>
+                const isExpanded = regTab === "resolutions" && expandedRes === id;
+                const hasConfigFields = regTab === "resolutions" && item.configFields && item.configFields.some((f) => f.type === "select");
+
+                return <div key={id || i} style={{ marginBottom: 4 }}>
+                  <div style={{ ...css.row, padding: "4px 8px", background: C.surface2, borderRadius: isExpanded ? "4px 4px 0 0" : 4, marginBottom: 0, cursor: hasConfigFields ? "pointer" : "default" }}
+                    onClick={() => hasConfigFields && setExpandedRes(isExpanded ? null : id)}>
+                    {regTab === "shapes" ? (
+                      <span style={{ flex: 1 }}>{item}</span>
+                    ) : (
+                      <>
+                        {hasConfigFields && <span style={{ fontSize: 10, color: C.textDim, marginRight: 2 }}>{isExpanded ? "▾" : "▸"}</span>}
+                        <span style={{ fontWeight: 600, color: item.color || C.text, minWidth: 80 }}>{item.id}</span>
+                        <span style={{ flex: 1, color: C.textDim, fontSize: 11 }}>
+                          {item.name || ""} {item.desc ? "— " + item.desc : ""}
+                          {item.params && item.params.length > 0 && " (" + item.params.map((p) => p.key || p).join(", ") + ")"}
+                          {item.hasParam && " (" + item.paramKey + ")"}
+                        </span>
+                      </>
+                    )}
+                    <button style={css.btnDanger} onClick={(e) => { e.stopPropagation(); removeRegItem(regTab, id); }}>×</button>
+                  </div>
+
+                  {/* Expanded resolution config fields */}
+                  {isExpanded && item.configFields && (
+                    <div style={{ padding: "8px 12px", background: C.surface3, borderRadius: "0 0 4px 4px", border: "1px solid " + C.border, borderTop: "none" }}>
+                      {item.configFields.filter((f) => f.type === "select").map((f) => {
+                        const allOpts = getFieldOptions(id, f.key, f.options);
+                        const customOpts = objKeys((configOpts[id] && configOpts[id][f.key]) || {});
+                        return (
+                          <div key={f.key} style={{ marginBottom: 8 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: C.accent, marginBottom: 4 }}>{f.label || f.key}</div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+                              {allOpts.map((opt) => {
+                                const isCustomOpt = customOpts.includes(opt);
+                                return (
+                                  <div key={opt} style={{
+                                    display: "flex", alignItems: "center", gap: 3, padding: "3px 8px",
+                                    background: C.surface2, borderRadius: 3, border: "1px solid " + C.border,
+                                    fontSize: 11, color: C.text,
+                                  }}>
+                                    <span>{opt}</span>
+                                    {isCustomOpt && <button style={{ ...css.btnDanger, fontSize: 11, padding: "0 3px" }} onClick={() => removeConfigOption(id, f.key, opt)}>×</button>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div style={{ display: "flex", gap: 4 }}>
+                              <input style={{ ...css.input, flex: 1, fontSize: 11, padding: "3px 6px" }}
+                                placeholder={"New " + (f.label || f.key).toLowerCase() + " type..."}
+                                value={(newOptInput[id + ":" + f.key]) || ""}
+                                onChange={(e) => setNewOptInput((p) => ({ ...p, [id + ":" + f.key]: e.target.value }))}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    addConfigOption(id, f.key, newOptInput[id + ":" + f.key]);
+                                    setNewOptInput((p) => ({ ...p, [id + ":" + f.key]: "" }));
+                                  }
+                                }}
+                              />
+                              <button style={{ ...css.btn, fontSize: 11, padding: "3px 8px" }} onClick={() => {
+                                addConfigOption(id, f.key, newOptInput[id + ":" + f.key]);
+                                setNewOptInput((p) => ({ ...p, [id + ":" + f.key]: "" }));
+                              }}>+ Add</button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {item.configFields.filter((f) => f.type === "select").length === 0 && (
+                        <div style={{ fontSize: 11, color: C.textDim }}>No expandable option fields</div>
+                      )}
+                    </div>
                   )}
-                  <button style={css.btnDanger} onClick={() => removeRegItem(regTab, id)}>×</button>
                 </div>;
               })}
 
