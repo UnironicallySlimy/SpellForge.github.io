@@ -673,10 +673,12 @@ function SpellForge() {
                       <div key={f.key} style={css.row}>
                         <span style={{ ...css.label, minWidth: 90 }}>{f.label}</span>
                         {f.type === "select" ? (
-                          <select style={{ ...css.select, flex: 1 }} value={draft.config[f.key] || ""} onChange={(e) => upConfig(f.key, e.target.value)}>
-                            <option value="">—</option>
-                            {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
-                          </select>
+                          <div style={{ flex: 1, position: "relative" }}>
+                            <input list={"dl_" + f.key} style={{ ...css.input }} value={draft.config[f.key] || ""} onChange={(e) => upConfig(f.key, e.target.value)} placeholder="Type or select..." />
+                            <datalist id={"dl_" + f.key}>
+                              {f.options.map((o) => <option key={o} value={o} />)}
+                            </datalist>
+                          </div>
                         ) : <input style={{ ...css.input, flex: 1 }} type={f.type || "text"} placeholder={f.placeholder || ""} value={draft.config[f.key] || ""} onChange={(e) => upConfig(f.key, e.target.value)} />}
                       </div>
                     ))}
