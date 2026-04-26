@@ -80,6 +80,7 @@ const DEF_RESOLUTIONS = [
       { key: "max_range", label: "Max Range", type: "number" },
       { key: "piercing", label: "Piercing", type: "checkbox" },
       { key: "pierce_count", label: "Pierce Count (-1 = Infinite)", type: "number", showWhen: { key: "piercing", value: "true" } },
+      { key: "trigger_on_pierce", label: "Trigger On Pierce", type: "checkbox", showWhen: { key: "piercing", value: "true" } },
       { key: "aoe_on_impact", label: "AoE On Impact", type: "checkbox" },
       { key: "aoe_shape", label: "AoE Shape", type: "stencil", showWhen: { key: "aoe_on_impact", value: "true" } },
       { key: "aoe_scale", label: "AoE Scale", type: "number", showWhen: { key: "aoe_on_impact", value: "true" } },
@@ -240,16 +241,15 @@ function SpellForge() {
   const listenersRef = useRef(false);
 
   const reg = useMemo(() => {
-    const removed = (cat) => objKeys(removedDefs[cat] || {});
-    const filterDef = (arr, cat) => arr.filter((x) => !removed(cat).includes(x.id || x));
+    const removedCats = (cat) => objKeys(removedDefs[cat] || {});
+    const filterDef = (arr, cat) => arr.filter((x) => !removedCats(cat).includes(x.id || x));
     const mergeFields = (items) => items.map((item) => {
       const overrides = customFields[item.id] || {};
-      const removed = removedFields[item.id] || {};
-      // Start with defaults, apply overrides, filter removed, add new custom fields
+      const removedFlds = removedFields[item.id] || {};
       const baseFields = (item.configFields || [])
-        .filter((f) => !removed[f.key])
+        .filter((f) => !removedFlds[f.key])
         .map((f) => overrides[f.key] ? { ...f, ...overrides[f.key] } : f);
-      const newFields = objToArr(overrides).filter((f) => !(item.configFields || []).some((df) => df.key === f.key) && !removed[f.key]);
+      const newFields = objToArr(overrides).filter((f) => !(item.configFields || []).some((df) => df.key === f.key) && !removedFlds[f.key]);
       return { ...item, configFields: [...baseFields, ...newFields] };
     });
     return {
@@ -261,7 +261,7 @@ function SpellForge() {
       keywords: mergeFields([...filterDef(DEF_KEYWORDS, "keywords"), ...objToArr(customReg.keywords)]),
       shapes: [...filterDef(DEF_SHAPES, "shapes"), ...objKeys(customReg.shapes)],
     };
-  }, [customReg, removedDefs, customFields]);
+  }, [customReg, removedDefs, customFields, removedFields]);
 
   const flash = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2000); };
 
@@ -473,14 +473,36 @@ function SpellForge() {
   const removeExcessOp = (ei, oi) => setDraft((d) => { const e = [...d.excess]; e[ei] = { ...e[ei], ops: e[ei].ops.filter((_, j) => j !== oi) }; return { ...d, excess: e }; });
   const upExcessOp = (ei, oi, f, v) => setDraft((d) => { const e = [...d.excess]; const ops = [...e[ei].ops]; ops[oi] = { ...ops[oi], [f]: v }; e[ei] = { ...e[ei], ops }; return { ...d, excess: e }; });
 
+  // Order fields so children appear immediately after their parent
+  const orderFields = (fields) => {
+    if (!fields || !fields.length) return fields || [];
+    const ordered = [];
+    const addWithChildren = (parent) => {
+      ordered.push(parent);
+      fields.filter((f) => f.showWhen && f.showWhen.key === parent.key).forEach((child) => addWithChildren(child));
+    };
+    fields.filter((f) => !f.showWhen).forEach((f) => addWithChildren(f));
+    fields.forEach((f) => { if (!ordered.includes(f)) ordered.push(f); });
+    return ordered;
+  };
+
+  const getFieldDepth = (f, fields) => {
+    let d = 0, cur = f;
+    while (cur && cur.showWhen) { d++; cur = fields.find((p) => p.key === cur.showWhen.key); }
+    return d;
+  };
+
   // Reusable config field renderer
   const renderConfigFields = (fields, configObj, updateFn, resId) => {
     if (!fields || !fields.length) return null;
-    const visible = fields.filter((f) => !f.showWhen || configObj[f.showWhen.key] === f.showWhen.value);
+    const ordered = orderFields(fields);
+    const visible = ordered.filter((f) => !f.showWhen || configObj[f.showWhen.key] === f.showWhen.value);
     if (!visible.length) return null;
-    return visible.map((f) => (
-      <div key={f.key} style={css.row}>
-        <span style={{ ...css.label, minWidth: 90 }}>{f.label || f.key}</span>
+    return visible.map((f) => {
+      const depth = getFieldDepth(f, fields);
+      return (
+      <div key={f.key} style={{ ...css.row, marginLeft: depth * 16 }}>
+        <span style={{ ...css.label, minWidth: 90 }}>{depth > 0 && <span style={{ color: C.accent, marginRight: 4, fontSize: 10 }}>↳</span>}{f.label || f.key}</span>
         {f.type === "checkbox" ? (
           <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", flex: 1 }}>
             <input type="checkbox" checked={configObj[f.key] === "true" || configObj[f.key] === true} onChange={(e) => updateFn(f.key, e.target.checked ? "true" : "")} />
@@ -507,7 +529,7 @@ function SpellForge() {
           </div>
         ) : <input style={{ ...css.input, flex: 1 }} type={f.type || "text"} placeholder={f.ph || f.placeholder || ""} value={configObj[f.key] || ""} onChange={(e) => updateFn(f.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()} />}
       </div>
-    ));
+    ); });
   };
 
   const exportAll = () => { navigator.clipboard.writeText(spells.map((s) => toYaml(s, reg)).join("\n\n")).then(() => flash("Copied!")); };
@@ -986,7 +1008,7 @@ function SpellForge() {
                       {!hasConfigFields && <div style={{ fontSize: 11, color: C.textDim, marginBottom: 8 }}>No config fields yet</div>}
 
                       {/* Field list */}
-                      {hasConfigFields && item.configFields.map((f) => {
+                      {hasConfigFields && orderFields(item.configFields).map((f) => {
                         const fieldId = id + ":" + f.key;
                         const isFieldOpen = expandedField === fieldId;
                         const isEditing = editingField === fieldId;
@@ -996,9 +1018,10 @@ function SpellForge() {
                         const hasParent = f.showWhen && f.showWhen.key;
                         const isDef = isDefaultField(id, f.key);
                         const isOverridden = isFieldOverridden(id, f.key);
+                        const depth = getFieldDepth(f, item.configFields);
 
                         return (
-                          <div key={f.key} style={{ marginLeft: hasParent ? 16 : 0, marginBottom: 3 }}>
+                          <div key={f.key} style={{ marginLeft: depth * 16, marginBottom: 3 }}>
                             {/* Field header row */}
                             <div style={{
                               display: "flex", alignItems: "center", gap: 5, padding: "4px 8px",
