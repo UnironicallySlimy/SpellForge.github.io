@@ -72,7 +72,9 @@ const DEF_SEL_MODS = [
 ];
 
 const DEF_RESOLUTIONS = [
-  { id: "Instant", name: "Instant", configFields: [] },
+  { id: "Instant", name: "Instant", configFields: [
+    { key: "delay", label: "Delay (s)", type: "number" },
+  ] },
   {
     id: "Projectile", name: "Projectile", configFields: [
       { key: "speed", label: "Speed", type: "number" },
@@ -85,9 +87,6 @@ const DEF_RESOLUTIONS = [
       { key: "aoe_shape", label: "AoE Shape", type: "stencil", showWhen: { key: "aoe_on_impact", value: "true" } },
       { key: "aoe_scale", label: "AoE Scale", type: "number", showWhen: { key: "aoe_on_impact", value: "true" } },
     ],
-  },
-  {
-    id: "Animation_Trigger", name: "Animation Trigger", configFields: [],
   },
   {
     id: "Placeable", name: "Placeable", configFields: [
@@ -111,7 +110,7 @@ const DEF_KEYWORDS = [
   { id: "Root", configFields: [{ key: "duration", label: "Duration", type: "text", ph: "2" }] },
   { id: "Heal", configFields: [{ key: "amount", label: "Amount", type: "text", ph: "5 + 2 * E" }] },
   { id: "Shield", configFields: [{ key: "amount", label: "Amount", type: "text", ph: "10" }, { key: "duration", label: "Duration", type: "text", ph: "5" }] },
-  { id: "Spawn", configFields: [{ key: "type", label: "Type", type: "select", options: ["Placeable"] }, { key: "trigger", label: "Trigger", type: "select", options: ["Passive", "Pulse", "On_Enter"] }, { key: "duration", label: "Duration", type: "text", ph: "5" }, { key: "stencil", label: "Stencil", type: "stencil" }, { key: "scale", label: "Scale", type: "text", ph: "3" }] },
+  { id: "Spawn", configFields: [{ key: "spell", label: "Spell", type: "spell" }] },
 ];
 
 const DEF_SHAPES = ["Circle", "Cone", "Line"];
@@ -135,7 +134,8 @@ function makeSpell() {
     selStrategy: "Overlap", selConfig: {},
     selMods: [], selModConfigs: {},
     resolution: "Instant", config: {},
-    keywords: [], excess: [], flavor: "",
+    keywords: [], excess: [], flavor: "", notes: "",
+    section_notes: {},
   };
 }
 
@@ -181,6 +181,14 @@ function toYaml(s, reg) {
     });
   }
   if (s.flavor) L.push('  flavor: "' + s.flavor + '"');
+  if (s.notes) {
+    L.push("  notes: |");
+    s.notes.split("\n").forEach((line) => L.push("    " + line));
+  }
+  const sn = s.section_notes || {};
+  Object.keys(sn).filter((k) => sn[k]).forEach((k) => {
+    L.push("  # [" + k + "] " + sn[k].replace(/\n/g, " "));
+  });
 
   return L.join("\n");
 }
@@ -286,7 +294,7 @@ function SpellForge() {
             ...makeSpell(), ...s,
             targeter: capitalize((s.targeter || "Self").replace(/_/g, "_")),
             selStrategy: capitalize((s.selStrategy || "Overlap").replace(/_/g, "_")),
-            resolution: capitalize((s.resolution || "Instant").replace(/_/g, "_")),
+            resolution: (() => { let r = capitalize((s.resolution || "Instant").replace(/_/g, "_")); return r === "Animation_Trigger" ? "Instant" : r; })(),
             orbs: s.orbs || {},
             selMods: (s.selMods || []).map((m) => capitalize(m)),
             targeterConfig: s.targeterConfig || (s.targeterRange ? { range: s.targeterRange } : {}),
@@ -295,6 +303,7 @@ function SpellForge() {
             config: s.config || {},
             keywords: (s.keywords || []).map((k) => ({ ...k, _keyword_type: k._keyword_type || k.type || "Damage", config: k.config || k.params || {} })),
             excess: (s.excess || []).map((e) => ({ ...e, ops: e.ops || [] })),
+            section_notes: s.section_notes || {},
           }));
           setSpells(clean);
         });
@@ -441,6 +450,31 @@ function SpellForge() {
     });
   };
   const upConfig = (k, v) => setDraft((d) => ({ ...d, config: { ...d.config, [k]: v } }));
+  const upSectionNote = (section, val) => setDraft((d) => ({ ...d, section_notes: { ...d.section_notes, [section]: val } }));
+
+  // Reusable inline notes for each section
+  const SectionNote = ({ section }) => {
+    const val = (draft.section_notes && draft.section_notes[section]) || "";
+    const hasNote = val.length > 0;
+    return (
+      <div style={{ marginTop: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 10, color: hasNote ? C.accent : C.textDim }}
+          onClick={() => {
+            const el = document.getElementById("note_" + section);
+            if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+          }}>
+          <span>{hasNote ? "▾" : "▸"}</span>
+          <span>{hasNote ? "Notes" : "Add note..."}</span>
+        </div>
+        <textarea id={"note_" + section} style={{
+          ...css.input, display: hasNote ? "block" : "none", marginTop: 4,
+          minHeight: 36, resize: "vertical", fontFamily: "inherit", fontSize: 11,
+          lineHeight: 1.4, color: C.textDim,
+        }} value={val} onChange={(e) => upSectionNote(section, e.target.value)}
+          placeholder="Implementation notes for this section..." />
+      </div>
+    );
+  };
   const toggleMod = (id) => setDraft((d) => ({ ...d, selMods: d.selMods.includes(id) ? d.selMods.filter((m) => m !== id) : [...d.selMods, id] }));
   const upTargeterConfig = (k, v) => setDraft((d) => ({ ...d, targeterConfig: { ...d.targeterConfig, [k]: v } }));
   const upSelConfig = (k, v) => setDraft((d) => ({ ...d, selConfig: { ...d.selConfig, [k]: v } }));
@@ -519,6 +553,11 @@ function SpellForge() {
           <select style={{ ...css.select, flex: 1 }} value={configObj[f.key] || ""} onChange={(e) => updateFn(f.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
             <option value="">—</option>
             {reg.elements.map((el) => <option key={el.id} value={el.name}>{el.name}</option>)}
+          </select>
+        ) : f.type === "spell" ? (
+          <select style={{ ...css.select, flex: 1 }} value={configObj[f.key] || ""} onChange={(e) => updateFn(f.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
+            <option value="">—</option>
+            {spells.filter((s) => s.name).map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
           </select>
         ) : f.type === "select" ? (
           <div style={{ flex: 1, position: "relative" }}>
@@ -606,7 +645,7 @@ function SpellForge() {
   };
 
   // Custom field management
-  const FIELD_TYPES = ["number", "text", "select", "checkbox", "stencil", "element"];
+  const FIELD_TYPES = ["number", "text", "select", "checkbox", "stencil", "element", "spell"];
 
   const addCustomField = (itemId, field) => {
     if (!field.key) return;
@@ -776,6 +815,7 @@ function SpellForge() {
                 <div style={css.sectionTitle}><span>◆</span> Identity</div>
                 <div style={css.row}><span style={css.label}>Name</span><input style={css.input} value={draft.name} onChange={(e) => up("name", e.target.value)} placeholder="Spell name..." /></div>
                 <div style={css.row}><span style={css.label}>Flavor</span><input style={css.input} value={draft.flavor} onChange={(e) => up("flavor", e.target.value)} placeholder="Flavor text..." /></div>
+                <div style={css.row}><span style={{ ...css.label, alignSelf: "flex-start", paddingTop: 4 }}>Notes</span><textarea style={{ ...css.input, minHeight: 60, resize: "vertical", fontFamily: "inherit", lineHeight: 1.4 }} value={draft.notes || ""} onChange={(e) => up("notes", e.target.value)} placeholder="Describe unique behaviors, special interactions, implementation notes..." /></div>
               </div>
 
               {/* Orbs */}
@@ -805,6 +845,7 @@ function SpellForge() {
                 {targeterDef && targeterDef.configFields && targeterDef.configFields.length > 0 && (
                   <div style={{ marginTop: 4 }}>{renderConfigFields(targeterDef.configFields, draft.targeterConfig || {}, upTargeterConfig, "targeter_" + draft.targeter)}</div>
                 )}
+                <SectionNote section="targeter" />
               </div>
 
               {/* Stencil */}
@@ -822,6 +863,7 @@ function SpellForge() {
                   <span style={css.label}>Scale</span>
                   <input style={{ ...css.input, width: 60 }} type="number" value={draft.stencilScale} onChange={(e) => up("stencilScale", e.target.value)} />
                 </div>}
+                <SectionNote section="stencil" />
               </div>
 
               {/* Selection */}
@@ -860,6 +902,7 @@ function SpellForge() {
                     );
                   })}
                 </div>
+                <SectionNote section="selection" />
               </div>
 
               {/* Resolution */}
@@ -874,6 +917,7 @@ function SpellForge() {
                     {renderConfigFields(resDef.configFields, draft.config || {}, upConfig, draft.resolution)}
                   </div>
                 )}
+                <SectionNote section="resolution" />
               </div>
 
               {/* Keywords */}
@@ -904,6 +948,7 @@ function SpellForge() {
                   );
                 })}
                 {(!draft.keywords || draft.keywords.length === 0) && <div style={{ color: C.textDim, fontSize: 11 }}>No keywords added</div>}
+                <SectionNote section="keywords" />
               </div>
 
               {/* Excess */}
@@ -949,6 +994,7 @@ function SpellForge() {
                   </div>
                 ))}
                 {(!draft.excess || draft.excess.length === 0) && <div style={{ color: C.textDim, fontSize: 11 }}>No excess rules</div>}
+                <SectionNote section="excess" />
               </div>
 
               <div style={{ display: "flex", gap: 8, marginBottom: 40 }}>
