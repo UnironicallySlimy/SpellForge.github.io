@@ -95,6 +95,7 @@ const DEF_RESOLUTIONS = [
       { key: "tick_rate", label: "Tick Rate (s)", type: "number", showWhen: { key: "trigger", value: "Pulse" } },
       { key: "activate_once", label: "Activate Once", type: "checkbox" },
       { key: "arm_time", label: "Arm Time (s)", type: "number" },
+      { key: "attach_to_caster", label: "Attach To Caster", type: "checkbox" },
     ],
   },
 ];
@@ -165,6 +166,7 @@ function toYaml(s, reg) {
     s.keywords.forEach((kw) => {
       const pp = Object.entries(kw.config || {}).filter(([, v]) => v !== "").map(([k, v]) => k + "=" + v).join(", ");
       let line = kw._keyword_type + "(" + pp + ")";
+      if (kw.tick) line += " + Tick(" + kw.tick + ")";
       if (kw.chance) line += " + Chance(" + kw.chance + ")";
       L.push("    - " + line);
     });
@@ -447,7 +449,7 @@ function SpellForge() {
   const addKeyword = () => {
     const kw = reg.keywords[0]; const config = {};
     if (kw.configFields) kw.configFields.forEach((f) => (config[f.key] = ""));
-    setDraft((d) => ({ ...d, keywords: [...d.keywords, { _keyword_type: kw.id, config, chance: "" }] }));
+    setDraft((d) => ({ ...d, keywords: [...d.keywords, { _keyword_type: kw.id, config, chance: "", tick: "" }] }));
   };
   const removeKeyword = (i) => setDraft((d) => ({ ...d, keywords: d.keywords.filter((_, j) => j !== i) }));
   const upKeyword = (i, field, val) => {
@@ -458,6 +460,7 @@ function SpellForge() {
         if (def && def.configFields) def.configFields.forEach((f) => (config[f.key] = ""));
         kws[i] = { ...kws[i], _keyword_type: val, config };
       } else if (field === "chance") kws[i] = { ...kws[i], chance: val };
+      else if (field === "tick") kws[i] = { ...kws[i], tick: val };
       else kws[i] = { ...kws[i], config: { ...kws[i].config, [field]: val } };
       return { ...d, keywords: kws };
     });
@@ -863,6 +866,8 @@ function SpellForge() {
                           {reg.keywords.map((k) => <option key={k.id} value={k.id}>{k.id}</option>)}
                         </select>
                         <div style={{ flex: 1 }} />
+                        <span style={{ fontSize: 11, color: C.textDim }}>Tick</span>
+                        <input style={{ ...css.input, width: 35, padding: "2px 5px", fontSize: 11 }} placeholder="—" value={kw.tick || ""} onChange={(e) => upKeyword(i, "tick", e.target.value)} onKeyDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} />
                         <span style={{ fontSize: 11, color: C.textDim }}>Chance</span>
                         <input style={{ ...css.input, width: 50, padding: "2px 5px", fontSize: 11 }} placeholder="—" value={kw.chance || ""} onChange={(e) => upKeyword(i, "chance", e.target.value)} onKeyDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} />
                         <button style={css.btnDanger} onClick={() => removeKeyword(i)}>×</button>
