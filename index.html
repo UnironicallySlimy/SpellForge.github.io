@@ -46,36 +46,38 @@ const DEF_ELEMENTS = [
 ];
 
 const DEF_TARGETERS = [
-  { id: "self", name: "Self", desc: "Origin = caster position" },
-  { id: "ground", name: "Ground", desc: "Origin = clicked terrain, stencil preview" },
-  { id: "direction", name: "Direction", desc: "Origin = caster, toward cursor" },
-  { id: "target", name: "Target", desc: "Origin = clicked entity", hasRange: true },
+  { id: "Self", name: "Self", desc: "Origin = caster position", configFields: [] },
+  { id: "Ground", name: "Ground", desc: "Origin = clicked terrain, stencil preview", configFields: [] },
+  { id: "Direction", name: "Direction", desc: "Origin = caster, toward cursor", configFields: [] },
+  { id: "Target", name: "Target", desc: "Origin = clicked entity", configFields: [
+    { key: "range", label: "Range", type: "number" },
+  ] },
 ];
 
 const DEF_SELECTIONS = [
-  { id: "self", name: "Self", params: [] },
-  { id: "overlap", name: "Overlap", params: [] },
-  { id: "nearest_n", name: "Nearest N", params: [{ key: "n", def: "1" }] },
-  { id: "chain", name: "Chain", params: [{ key: "jumps", def: "3" }, { key: "range", def: "5" }] },
-  { id: "all_alive", name: "All Alive", params: [] },
+  { id: "Self", name: "Self", configFields: [] },
+  { id: "Overlap", name: "Overlap", configFields: [] },
+  { id: "Nearest_N", name: "Nearest N", configFields: [{ key: "n", label: "N", type: "number" }] },
+  { id: "Chain", name: "Chain", configFields: [{ key: "jumps", label: "Jumps", type: "number" }, { key: "range", label: "Range", type: "number" }] },
+  { id: "All_Alive", name: "All Alive", configFields: [] },
 ];
 
 const DEF_SEL_MODS = [
-  { id: "enemies", name: "Enemies" },
-  { id: "allies", name: "Allies" },
-  { id: "any", name: "Any" },
-  { id: "exclude_self", name: "Exclude Self" },
-  { id: "max", name: "Max", hasParam: true, paramKey: "n", def: "3" },
-  { id: "nearest", name: "Sort Nearest" },
-  { id: "furthest", name: "Sort Furthest" },
-  { id: "lowest_hp", name: "Sort Lowest HP" },
-  { id: "highest_hp", name: "Sort Highest HP" },
+  { id: "Enemies", name: "Enemies" },
+  { id: "Allies", name: "Allies" },
+  { id: "Any", name: "Any" },
+  { id: "Exclude_Self", name: "Exclude Self" },
+  { id: "Max", name: "Max", hasParam: true, paramKey: "n", def: "3" },
+  { id: "Nearest", name: "Sort Nearest" },
+  { id: "Furthest", name: "Sort Furthest" },
+  { id: "Lowest_Hp", name: "Sort Lowest HP" },
+  { id: "Highest_Hp", name: "Sort Highest HP" },
 ];
 
 const DEF_RESOLUTIONS = [
-  { id: "instant", name: "Instant", configFields: [] },
+  { id: "Instant", name: "Instant", configFields: [] },
   {
-    id: "projectile", name: "Projectile", configFields: [
+    id: "Projectile", name: "Projectile", configFields: [
       { key: "speed", label: "Speed", type: "number" },
       { key: "travel", label: "Travel", type: "select", options: ["Linear", "Homing", "Arc"] },
       { key: "max_range", label: "Max Range", type: "number" },
@@ -87,10 +89,10 @@ const DEF_RESOLUTIONS = [
     ],
   },
   {
-    id: "animation_trigger", name: "Animation Trigger", configFields: [],
+    id: "Animation_Trigger", name: "Animation Trigger", configFields: [],
   },
   {
-    id: "placeable", name: "Placeable", configFields: [
+    id: "Placeable", name: "Placeable", configFields: [
       { key: "duration", label: "Duration (s)", type: "number" },
       { key: "trigger", label: "Trigger", type: "select", options: ["Passive", "Pulse", "On_Enter"] },
       { key: "tick_rate", label: "Tick Rate (s)", type: "number", showWhen: { key: "trigger", value: "Pulse" } },
@@ -130,10 +132,10 @@ function makeSpell() {
   return {
     id: uid(), name: "", orbs: {}, hasStencil: false,
     stencilShape: "circle", stencilScale: "1",
-    targeter: "self", targeterRange: "8",
-    selStrategy: "overlap", selParams: {},
+    targeter: "Self", targeterConfig: {},
+    selStrategy: "Overlap", selConfig: {},
     selMods: [], selModParams: {},
-    resolution: "instant", config: {},
+    resolution: "Instant", config: {},
     keywords: [], excess: [], flavor: "",
   };
 }
@@ -145,16 +147,12 @@ function toYaml(s, reg) {
   if (orbs.length) L.push("  orbs: { " + orbs.map(([k, v]) => k + ": " + v).join(", ") + " }");
   if (s.hasStencil && s.stencilShape) L.push("  stencil: " + s.stencilShape + ", " + (s.stencilScale || 1));
   let t = s.targeter;
-  if (t === "target" && s.targeterRange) t = "target(range=" + s.targeterRange + ")";
+  const tCfg = Object.entries(s.targeterConfig || {}).filter(([, v]) => v !== "" && v != null);
+  if (tCfg.length) t += "(" + tCfg.map(([k, v]) => k + "=" + v).join(", ") + ")";
   L.push("  targeter: " + t);
   let sel = s.selStrategy;
-  const sd = reg.selections.find((x) => x.id === sel);
-  if (sel === "nearest_n") sel = "nearest_n(" + (s.selParams && s.selParams.n || 1) + ")";
-  else if (sel === "chain") sel = "chain(" + (s.selParams && s.selParams.jumps || 3) + ", " + (s.selParams && s.selParams.range || 5) + ")";
-  else if (sd && sd.params && sd.params.length) {
-    const pp = sd.params.map((p) => (s.selParams && s.selParams[p.key]) || p.def).join(", ");
-    sel = sel + "(" + pp + ")";
-  }
+  const sCfg = Object.entries(s.selConfig || {}).filter(([, v]) => v !== "" && v != null);
+  if (sCfg.length) sel += "(" + sCfg.map(([k, v]) => k + "=" + v).join(", ") + ")";
   for (const m of s.selMods || []) {
     const md = reg.selMods.find((x) => x.id === m);
     if (md && md.hasParam) sel += " + " + m + "(" + ((s.selModParams && s.selModParams[m]) || md.def || "") + ")";
@@ -168,7 +166,7 @@ function toYaml(s, reg) {
     L.push("  keywords:");
     s.keywords.forEach((kw) => {
       const pp = Object.entries(kw.params || {}).filter(([, v]) => v !== "").map(([k, v]) => k + "=" + v).join(", ");
-      let line = kw.type + "(" + pp + ")";
+      let line = kw._keyword_type + "(" + pp + ")";
       if (kw.chance) line += " + Chance(" + kw.chance + ")";
       L.push("    - " + line);
     });
@@ -231,23 +229,39 @@ function SpellForge() {
   const [removedDefs, setRemovedDefs] = useState(EMPTY_REG);
   const [showRemoved, setShowRemoved] = useState(false);
   const [configOpts, setConfigOpts] = useState({});
+  const [customFields, setCustomFields] = useState({});
+  const [removedFields, setRemovedFields] = useState({});
   const [expandedRes, setExpandedRes] = useState(null);
+  const [expandedField, setExpandedField] = useState(null);
+  const [editingField, setEditingField] = useState(null);
+  const [editFieldData, setEditFieldData] = useState({});
   const [newOptInput, setNewOptInput] = useState({});
+  const [newFieldInput, setNewFieldInput] = useState({});
   const listenersRef = useRef(false);
 
   const reg = useMemo(() => {
     const removed = (cat) => objKeys(removedDefs[cat] || {});
     const filterDef = (arr, cat) => arr.filter((x) => !removed(cat).includes(x.id || x));
+    const mergeFields = (items) => items.map((item) => {
+      const overrides = customFields[item.id] || {};
+      const removed = removedFields[item.id] || {};
+      // Start with defaults, apply overrides, filter removed, add new custom fields
+      const baseFields = (item.configFields || [])
+        .filter((f) => !removed[f.key])
+        .map((f) => overrides[f.key] ? { ...f, ...overrides[f.key] } : f);
+      const newFields = objToArr(overrides).filter((f) => !(item.configFields || []).some((df) => df.key === f.key) && !removed[f.key]);
+      return { ...item, configFields: [...baseFields, ...newFields] };
+    });
     return {
       elements: [...filterDef(DEF_ELEMENTS, "elements"), ...objToArr(customReg.elements)],
-      targeters: [...filterDef(DEF_TARGETERS, "targeters"), ...objToArr(customReg.targeters)],
-      selections: [...filterDef(DEF_SELECTIONS, "selections"), ...objToArr(customReg.selections)],
+      targeters: mergeFields([...filterDef(DEF_TARGETERS, "targeters"), ...objToArr(customReg.targeters)]),
+      selections: mergeFields([...filterDef(DEF_SELECTIONS, "selections"), ...objToArr(customReg.selections)]),
       selMods: [...filterDef(DEF_SEL_MODS, "selMods"), ...objToArr(customReg.selMods)],
-      resolutions: [...filterDef(DEF_RESOLUTIONS, "resolutions"), ...objToArr(customReg.resolutions)],
+      resolutions: mergeFields([...filterDef(DEF_RESOLUTIONS, "resolutions"), ...objToArr(customReg.resolutions)]),
       keywords: [...filterDef(DEF_KEYWORDS, "keywords"), ...objToArr(customReg.keywords)],
       shapes: [...filterDef(DEF_SHAPES, "shapes"), ...objKeys(customReg.shapes)],
     };
-  }, [customReg, removedDefs]);
+  }, [customReg, removedDefs, customFields]);
 
   const flash = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2000); };
 
@@ -270,12 +284,16 @@ function SpellForge() {
           // Firebase strips empty arrays/objects, so sanitize
           const clean = arr.map((s) => ({
             ...makeSpell(), ...s,
+            targeter: capitalize((s.targeter || "Self").replace(/_/g, "_")),
+            selStrategy: capitalize((s.selStrategy || "Overlap").replace(/_/g, "_")),
+            resolution: capitalize((s.resolution || "Instant").replace(/_/g, "_")),
             orbs: s.orbs || {},
-            selMods: s.selMods || [],
-            selParams: s.selParams || {},
+            selMods: (s.selMods || []).map((m) => capitalize(m)),
+            targeterConfig: s.targeterConfig || (s.targeterRange ? { range: s.targeterRange } : {}),
+            selConfig: s.selConfig || s.selParams || {},
             selModParams: s.selModParams || {},
             config: s.config || {},
-            keywords: (s.keywords || []).map((k) => ({ ...k, params: k.params || {} })),
+            keywords: (s.keywords || []).map((k) => ({ ...k, _keyword_type: k._keyword_type || k.type || "Damage", params: k.params || {} })),
             excess: (s.excess || []).map((e) => ({ ...e, ops: e.ops || [] })),
           }));
           setSpells(clean);
@@ -320,6 +338,16 @@ function SpellForge() {
         // Listen to custom config field options (e.g. new travel types for projectile)
         dbRef.current.ref("spellforge/configOptions").on("value", (snap) => {
           setConfigOpts(snap.val() || {});
+        });
+
+        // Listen to custom config fields added to items
+        dbRef.current.ref("spellforge/customFields").on("value", (snap) => {
+          setCustomFields(snap.val() || {});
+        });
+
+        // Listen to removed fields
+        dbRef.current.ref("spellforge/removedFields").on("value", (snap) => {
+          setRemovedFields(snap.val() || {});
         });
       }
     } catch (e) {
@@ -414,22 +442,23 @@ function SpellForge() {
   };
   const upConfig = (k, v) => setDraft((d) => ({ ...d, config: { ...d.config, [k]: v } }));
   const toggleMod = (id) => setDraft((d) => ({ ...d, selMods: d.selMods.includes(id) ? d.selMods.filter((m) => m !== id) : [...d.selMods, id] }));
-  const upSelParam = (k, v) => setDraft((d) => ({ ...d, selParams: { ...d.selParams, [k]: v } }));
+  const upTargeterConfig = (k, v) => setDraft((d) => ({ ...d, targeterConfig: { ...d.targeterConfig, [k]: v } }));
+  const upSelConfig = (k, v) => setDraft((d) => ({ ...d, selConfig: { ...d.selConfig, [k]: v } }));
   const upSelModParam = (id, v) => setDraft((d) => ({ ...d, selModParams: { ...d.selModParams, [id]: v } }));
 
   const addKeyword = () => {
     const kw = reg.keywords[0]; const params = {};
     kw.params.forEach((p) => (params[p.key] = ""));
-    setDraft((d) => ({ ...d, keywords: [...d.keywords, { type: kw.id, params, chance: "" }] }));
+    setDraft((d) => ({ ...d, keywords: [...d.keywords, { _keyword_type: kw.id, params, chance: "" }] }));
   };
   const removeKeyword = (i) => setDraft((d) => ({ ...d, keywords: d.keywords.filter((_, j) => j !== i) }));
   const upKeyword = (i, field, val) => {
     setDraft((d) => {
       const kws = [...d.keywords];
-      if (field === "type") {
+      if (field === "_keyword_type") {
         const def = reg.keywords.find((k) => k.id === val); const params = {};
         if (def) def.params.forEach((p) => (params[p.key] = ""));
-        kws[i] = { ...kws[i], type: val, params };
+        kws[i] = { ...kws[i], _keyword_type: val, params };
       } else if (field === "chance") kws[i] = { ...kws[i], chance: val };
       else kws[i] = { ...kws[i], params: { ...kws[i].params, [field]: val } };
       return { ...d, keywords: kws };
@@ -443,6 +472,43 @@ function SpellForge() {
   const removeExcessOp = (ei, oi) => setDraft((d) => { const e = [...d.excess]; e[ei] = { ...e[ei], ops: e[ei].ops.filter((_, j) => j !== oi) }; return { ...d, excess: e }; });
   const upExcessOp = (ei, oi, f, v) => setDraft((d) => { const e = [...d.excess]; const ops = [...e[ei].ops]; ops[oi] = { ...ops[oi], [f]: v }; e[ei] = { ...e[ei], ops }; return { ...d, excess: e }; });
 
+  // Reusable config field renderer
+  const renderConfigFields = (fields, configObj, updateFn, resId) => {
+    if (!fields || !fields.length) return null;
+    const visible = fields.filter((f) => !f.showWhen || configObj[f.showWhen.key] === f.showWhen.value);
+    if (!visible.length) return null;
+    return visible.map((f) => (
+      <div key={f.key} style={css.row}>
+        <span style={{ ...css.label, minWidth: 90 }}>{f.label || f.key}</span>
+        {f.type === "checkbox" ? (
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", flex: 1 }}>
+            <input type="checkbox" checked={configObj[f.key] === "true" || configObj[f.key] === true} onChange={(e) => updateFn(f.key, e.target.checked ? "true" : "")} />
+            <span style={{ fontSize: 12, color: configObj[f.key] === "true" || configObj[f.key] === true ? C.text : C.textDim }}>
+              {configObj[f.key] === "true" || configObj[f.key] === true ? "Yes" : "No"}
+            </span>
+          </label>
+        ) : f.type === "stencil" ? (
+          <select style={{ ...css.select, flex: 1 }} value={configObj[f.key] || ""} onChange={(e) => updateFn(f.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
+            <option value="">—</option>
+            {reg.shapes.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        ) : f.type === "element" ? (
+          <select style={{ ...css.select, flex: 1 }} value={configObj[f.key] || ""} onChange={(e) => updateFn(f.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
+            <option value="">—</option>
+            {reg.elements.map((el) => <option key={el.id} value={el.name}>{el.name}</option>)}
+          </select>
+        ) : f.type === "select" ? (
+          <div style={{ flex: 1, position: "relative" }}>
+            <input list={"dl_" + (resId || "") + "_" + f.key} style={{ ...css.input }} value={configObj[f.key] || ""} onChange={(e) => updateFn(f.key, e.target.value)} placeholder="Type or select..." onKeyDown={(e) => e.stopPropagation()} />
+            <datalist id={"dl_" + (resId || "") + "_" + f.key}>
+              {getFieldOptions(resId || "", f.key, f.options).map((o) => <option key={o} value={o} />)}
+            </datalist>
+          </div>
+        ) : <input style={{ ...css.input, flex: 1 }} type={f.type || "text"} placeholder={f.placeholder || ""} value={configObj[f.key] || ""} onChange={(e) => updateFn(f.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()} />}
+      </div>
+    ));
+  };
+
   const exportAll = () => { navigator.clipboard.writeText(spells.map((s) => toYaml(s, reg)).join("\n\n")).then(() => flash("Copied!")); };
   const exportFile = () => {
     const blob = new Blob([spells.map((s) => toYaml(s, reg)).join("\n\n")], { type: "text/yaml" });
@@ -453,6 +519,7 @@ function SpellForge() {
   const yaml = useMemo(() => toYaml(draft, reg), [draft, reg]);
   const resDef = reg.resolutions.find((r) => r.id === draft.resolution);
   const selDef = reg.selections.find((s) => s.id === draft.selStrategy);
+  const targeterDef = reg.targeters.find((t) => t.id === draft.targeter);
 
   // ── Registry ops (write to Firebase) ──
   const [regForm, setRegForm] = useState({});
@@ -463,8 +530,10 @@ function SpellForge() {
     if (!regForm[cat] || !regForm[cat].id) return;
     const item = { ...regForm[cat], id: capitalize(regForm[cat].id), name: capitalize(regForm[cat].name || "") };
     if (cat === "keywords") { item.params = (item.paramStr || "").split(",").filter(Boolean).map((p) => ({ key: p.trim(), ph: "" })); delete item.paramStr; }
-    if (cat === "selections") { item.params = (item.paramStr || "").split(",").filter(Boolean).map((p) => ({ key: p.trim(), def: "" })); delete item.paramStr; }
-    if (cat === "resolutions") item.configFields = [];
+    if (cat === "selections" || cat === "targeters" || cat === "resolutions") {
+      item.configFields = (item.paramStr || "").split(",").filter(Boolean).map((p) => ({ key: p.trim(), label: capitalize(p.trim()), type: "number" }));
+      delete item.paramStr;
+    }
     fbSet("spellforge/customRegistry/" + cat + "/" + item.id, item);
     setRegForm((f) => ({ ...f, [cat]: {} }));
     flash("Added!");
@@ -508,6 +577,54 @@ function SpellForge() {
   const removeConfigOption = (resId, fieldKey, value) => {
     fbRemove("spellforge/configOptions/" + resId + "/" + fieldKey + "/" + value);
     flash("Option removed!");
+  };
+
+  // Custom field management
+  const FIELD_TYPES = ["number", "text", "select", "checkbox", "stencil", "element"];
+
+  const addCustomField = (itemId, field) => {
+    if (!field.key) return;
+    fbSet("spellforge/customFields/" + itemId + "/" + field.key, field);
+    flash("Field added!");
+  };
+
+  const editField = (itemId, fieldKey, updates) => {
+    fbSet("spellforge/customFields/" + itemId + "/" + fieldKey, updates);
+    flash("Field updated!");
+  };
+
+  const removeField = (itemId, fieldKey, isDefault) => {
+    if (isDefault) {
+      // Soft-delete default field
+      fbSet("spellforge/removedFields/" + itemId + "/" + fieldKey, true);
+      // Also remove any overrides
+      fbRemove("spellforge/customFields/" + itemId + "/" + fieldKey);
+    } else {
+      fbRemove("spellforge/customFields/" + itemId + "/" + fieldKey);
+    }
+    flash("Field removed!");
+  };
+
+  const restoreField = (itemId, fieldKey) => {
+    fbRemove("spellforge/removedFields/" + itemId + "/" + fieldKey);
+    flash("Field restored!");
+  };
+
+  const isDefaultField = (itemId, fieldKey) => {
+    // Check if this field exists in the original DEF_ arrays
+    const allDefs = [...DEF_TARGETERS, ...DEF_SELECTIONS, ...DEF_RESOLUTIONS];
+    const item = allDefs.find((d) => d.id === itemId);
+    return item && item.configFields && item.configFields.some((f) => f.key === fieldKey);
+  };
+
+  const isFieldOverridden = (itemId, fieldKey) => !!(customFields[itemId] && customFields[itemId][fieldKey]);
+  const isFieldRemoved = (itemId, fieldKey) => !!(removedFields[itemId] && removedFields[itemId][fieldKey]);
+  const getRemovedFieldsForItem = (itemId) => objKeys(removedFields[itemId] || {});
+
+  const getDefaultFieldDef = (itemId, fieldKey) => {
+    const allDefs = [...DEF_TARGETERS, ...DEF_SELECTIONS, ...DEF_RESOLUTIONS];
+    const item = allDefs.find((d) => d.id === itemId);
+    return item && item.configFields && item.configFields.find((f) => f.key === fieldKey);
   };
 
   // ════════════════════════════════════════════════════════════
@@ -656,10 +773,12 @@ function SpellForge() {
               {/* Targeter */}
               <div style={css.section}>
                 <div style={css.sectionTitle}><span>◆</span> Targeter</div>
-                <div style={css.row}><select style={{ ...css.select, flex: 1 }} value={draft.targeter} onChange={(e) => up("targeter", e.target.value)}>
+                <div style={css.row}><select style={{ ...css.select, flex: 1 }} value={draft.targeter} onChange={(e) => { up("targeter", e.target.value); up("targeterConfig", {}); }}>
                   {reg.targeters.map((t) => <option key={t.id} value={t.id}>{t.name} — {t.desc}</option>)}
                 </select></div>
-                {draft.targeter === "target" && <div style={css.row}><span style={css.label}>Range</span><input style={{ ...css.input, width: 80 }} type="number" value={draft.targeterRange} onChange={(e) => up("targeterRange", e.target.value)} /></div>}
+                {targeterDef && targeterDef.configFields && targeterDef.configFields.length > 0 && (
+                  <div style={{ marginTop: 4 }}>{renderConfigFields(targeterDef.configFields, draft.targeterConfig || {}, upTargeterConfig, "targeter_" + draft.targeter)}</div>
+                )}
               </div>
 
               {/* Stencil */}
@@ -682,12 +801,12 @@ function SpellForge() {
               {/* Selection */}
               <div style={css.section}>
                 <div style={css.sectionTitle}><span>◆</span> Selection</div>
-                <div style={css.row}><span style={css.label}>Strategy</span><select style={{ ...css.select, flex: 1 }} value={draft.selStrategy} onChange={(e) => up("selStrategy", e.target.value)}>
+                <div style={css.row}><span style={css.label}>Strategy</span><select style={{ ...css.select, flex: 1 }} value={draft.selStrategy} onChange={(e) => { up("selStrategy", e.target.value); up("selConfig", {}); }}>
                   {reg.selections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select></div>
-                {selDef && selDef.params && selDef.params.map((p) => (
-                  <div key={p.key} style={css.row}><span style={css.label}>{p.key}</span><input style={{ ...css.input, width: 80 }} value={(draft.selParams && draft.selParams[p.key]) ?? p.def ?? ""} onChange={(e) => upSelParam(p.key, e.target.value)} /></div>
-                ))}
+                {selDef && selDef.configFields && selDef.configFields.length > 0 && (
+                  <div style={{ marginTop: 4 }}>{renderConfigFields(selDef.configFields, draft.selConfig || {}, upSelConfig, "sel_" + draft.selStrategy)}</div>
+                )}
                 <div style={{ marginTop: 8, fontSize: 11, color: C.textDim, marginBottom: 4 }}>Modifiers</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                   {reg.selMods.map((m) => {
@@ -711,31 +830,7 @@ function SpellForge() {
                 {resDef && resDef.configFields && resDef.configFields.length > 0 && (
                   <div style={{ marginTop: 6 }}>
                     <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Config</div>
-                    {resDef.configFields.filter((f) => !f.showWhen || draft.config[f.showWhen.key] === f.showWhen.value).map((f) => (
-                      <div key={f.key} style={css.row}>
-                        <span style={{ ...css.label, minWidth: 90 }}>{f.label}</span>
-                        {f.type === "checkbox" ? (
-                          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", flex: 1 }}>
-                            <input type="checkbox" checked={draft.config[f.key] === "true" || draft.config[f.key] === true} onChange={(e) => upConfig(f.key, e.target.checked ? "true" : "")} />
-                            <span style={{ fontSize: 12, color: draft.config[f.key] === "true" || draft.config[f.key] === true ? C.text : C.textDim }}>
-                              {draft.config[f.key] === "true" || draft.config[f.key] === true ? "Yes" : "No"}
-                            </span>
-                          </label>
-                        ) : f.type === "stencil" ? (
-                          <select style={{ ...css.select, flex: 1 }} value={draft.config[f.key] || ""} onChange={(e) => upConfig(f.key, e.target.value)}>
-                            <option value="">—</option>
-                            {reg.shapes.map((s) => <option key={s} value={s}>{s}</option>)}
-                          </select>
-                        ) : f.type === "select" ? (
-                          <div style={{ flex: 1, position: "relative" }}>
-                            <input list={"dl_" + f.key} style={{ ...css.input }} value={draft.config[f.key] || ""} onChange={(e) => upConfig(f.key, e.target.value)} placeholder="Type or select..." />
-                            <datalist id={"dl_" + f.key}>
-                              {getFieldOptions(draft.resolution, f.key, f.options).map((o) => <option key={o} value={o} />)}
-                            </datalist>
-                          </div>
-                        ) : <input style={{ ...css.input, flex: 1 }} type={f.type || "text"} placeholder={f.placeholder || ""} value={draft.config[f.key] || ""} onChange={(e) => upConfig(f.key, e.target.value)} />}
-                      </div>
-                    ))}
+                    {renderConfigFields(resDef.configFields, draft.config || {}, upConfig, draft.resolution)}
                   </div>
                 )}
               </div>
@@ -744,11 +839,11 @@ function SpellForge() {
               <div style={css.section}>
                 <div style={css.sectionTitle}><span>◆</span> Keywords <button style={{ ...css.btn, marginLeft: "auto", fontSize: 11, padding: "2px 8px" }} onClick={addKeyword}>+ Add</button></div>
                 {(draft.keywords || []).map((kw, i) => {
-                  const kwDef = reg.keywords.find((k) => k.id === kw.type);
+                  const kwDef = reg.keywords.find((k) => k.id === kw._keyword_type);
                   return (
                     <div key={i} style={{ marginBottom: 8, padding: 8, background: C.surface2, borderRadius: 4, border: "1px solid " + C.border }}>
                       <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
-                        <select style={{ ...css.select, fontSize: 12, fontWeight: 600 }} value={kw.type} onChange={(e) => upKeyword(i, "type", e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
+                        <select style={{ ...css.select, fontSize: 12, fontWeight: 600 }} value={kw._keyword_type} onChange={(e) => upKeyword(i, "_keyword_type", e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
                           {reg.keywords.map((k) => <option key={k.id} value={k.id}>{k.id}</option>)}
                         </select>
                         <div style={{ flex: 1 }} />
@@ -804,9 +899,9 @@ function SpellForge() {
                       // Build target options from spell's keywords + config
                       const targetOpts = [];
                       (draft.keywords || []).forEach((kw) => {
-                        const kwDef = reg.keywords.find((k) => k.id === kw.type);
+                        const kwDef = reg.keywords.find((k) => k.id === kw._keyword_type);
                         if (kwDef) kwDef.params.forEach((p) => {
-                          const t = kw.type + "." + p.key;
+                          const t = kw._keyword_type + "." + p.key;
                           if (!targetOpts.includes(t)) targetOpts.push(t);
                         });
                       });
@@ -860,21 +955,22 @@ function SpellForge() {
               <div style={css.sectionTitle}><span>◆</span> {regTab === "selMods" ? "Selection Modifiers" : regTab}</div>
               {(regTab === "shapes" ? reg.shapes : reg[regTab]).map((item, i) => {
                 const id = regTab === "shapes" ? item : item.id;
-                const isExpanded = regTab === "resolutions" && expandedRes === id;
-                const hasConfigFields = regTab === "resolutions" && item.configFields && item.configFields.some((f) => f.type === "select");
+                const expandable = ["targeters", "selections", "resolutions"].includes(regTab);
+                const isExpanded = expandable && expandedRes === (regTab + ":" + id);
+                const hasConfigFields = expandable && item.configFields && item.configFields.length > 0;
 
                 return <div key={id || i} style={{ marginBottom: 4 }}>
-                  <div style={{ ...css.row, padding: "4px 8px", background: C.surface2, borderRadius: isExpanded ? "4px 4px 0 0" : 4, marginBottom: 0, cursor: hasConfigFields ? "pointer" : "default" }}
-                    onClick={() => hasConfigFields && setExpandedRes(isExpanded ? null : id)}>
+                  <div style={{ ...css.row, padding: "4px 8px", background: C.surface2, borderRadius: isExpanded ? "4px 4px 0 0" : 4, marginBottom: 0, cursor: expandable ? "pointer" : "default" }}
+                    onClick={() => expandable && setExpandedRes(isExpanded ? null : (regTab + ":" + id))}>
                     {regTab === "shapes" ? (
                       <span style={{ flex: 1 }}>{item}</span>
                     ) : (
                       <>
-                        {hasConfigFields && <span style={{ fontSize: 10, color: C.textDim, marginRight: 2 }}>{isExpanded ? "▾" : "▸"}</span>}
+                        {expandable && <span style={{ fontSize: 10, color: C.textDim, marginRight: 2 }}>{isExpanded ? "▾" : "▸"}</span>}
                         <span style={{ fontWeight: 600, color: item.color || C.text, minWidth: 80 }}>{item.id}</span>
                         <span style={{ flex: 1, color: C.textDim, fontSize: 11 }}>
                           {item.name || ""} {item.desc ? "— " + item.desc : ""}
-                          {item.params && item.params.length > 0 && " (" + item.params.map((p) => p.key || p).join(", ") + ")"}
+                          {item.configFields && item.configFields.length > 0 && " (" + item.configFields.map((f) => f.key).join(", ") + ")"}
                           {item.hasParam && " (" + item.paramKey + ")"}
                         </span>
                       </>
@@ -882,53 +978,171 @@ function SpellForge() {
                     <button style={css.btnDanger} onClick={(e) => { e.stopPropagation(); removeRegItem(regTab, id); }}>×</button>
                   </div>
 
-                  {/* Expanded resolution config fields */}
-                  {isExpanded && item.configFields && (
+                  {/* Expanded config fields */}
+                  {isExpanded && (
                     <div style={{ padding: "8px 12px", background: C.surface3, borderRadius: "0 0 4px 4px", border: "1px solid " + C.border, borderTop: "none" }}>
-                      {item.configFields.filter((f) => f.type === "select").map((f) => {
-                        const allOpts = getFieldOptions(id, f.key, f.options);
-                        const customOpts = objKeys((configOpts[id] && configOpts[id][f.key]) || {});
+
+                      {!hasConfigFields && <div style={{ fontSize: 11, color: C.textDim, marginBottom: 8 }}>No config fields yet</div>}
+
+                      {/* Field list */}
+                      {hasConfigFields && item.configFields.map((f) => {
+                        const fieldId = id + ":" + f.key;
+                        const isFieldOpen = expandedField === fieldId;
+                        const isEditing = editingField === fieldId;
+                        const isSelect = f.type === "select";
+                        const allOpts = isSelect ? getFieldOptions(id, f.key, f.options) : [];
+                        const customOpts = isSelect ? objKeys((configOpts[id] && configOpts[id][f.key]) || {}) : [];
+                        const hasParent = f.showWhen && f.showWhen.key;
+                        const isDef = isDefaultField(id, f.key);
+                        const isOverridden = isFieldOverridden(id, f.key);
+
                         return (
-                          <div key={f.key} style={{ marginBottom: 8 }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: C.accent, marginBottom: 4 }}>{f.label || f.key}</div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
-                              {allOpts.map((opt) => {
-                                const isCustomOpt = customOpts.includes(opt);
-                                return (
-                                  <div key={opt} style={{
-                                    display: "flex", alignItems: "center", gap: 3, padding: "3px 8px",
-                                    background: C.surface2, borderRadius: 3, border: "1px solid " + C.border,
-                                    fontSize: 11, color: C.text,
-                                  }}>
-                                    <span>{opt}</span>
-                                    {isCustomOpt && <button style={{ ...css.btnDanger, fontSize: 11, padding: "0 3px" }} onClick={() => removeConfigOption(id, f.key, opt)}>×</button>}
-                                  </div>
-                                );
-                              })}
+                          <div key={f.key} style={{ marginLeft: hasParent ? 16 : 0, marginBottom: 3 }}>
+                            {/* Field header row */}
+                            <div style={{
+                              display: "flex", alignItems: "center", gap: 5, padding: "4px 8px",
+                              background: C.surface2, borderRadius: isFieldOpen || isEditing ? "3px 3px 0 0" : 3, fontSize: 11,
+                              cursor: "pointer",
+                            }} onClick={() => { setExpandedField(isFieldOpen ? null : fieldId); setEditingField(null); }}>
+                              <span style={{ fontSize: 9, color: C.textDim }}>{isFieldOpen ? "▾" : "▸"}</span>
+                              {hasParent && <span style={{ fontSize: 9, color: C.accent }}>↳</span>}
+                              <span style={{ fontWeight: 600, color: C.text, minWidth: 55 }}>{f.key}</span>
+                              <span style={{ color: C.textDim }}>{f.label || ""}</span>
+                              <span style={{ color: C.accent, fontSize: 10, padding: "1px 4px", background: C.accent + "15", borderRadius: 2 }}>{f.type}</span>
+                              {isSelect && !isFieldOpen && <span style={{ color: C.textDim, fontSize: 10 }}>[{allOpts.join(", ")}]</span>}
+                              {hasParent && !isFieldOpen && <span style={{ color: C.textDim, fontSize: 10 }}>if {f.showWhen.key}={f.showWhen.value}</span>}
+                              {isOverridden && <span style={{ color: C.accent, fontSize: 9 }}>edited</span>}
+                              <div style={{ flex: 1 }} />
+                              <button style={{ ...css.btn, fontSize: 10, padding: "1px 5px" }} onClick={(e) => {
+                                e.stopPropagation();
+                                if (isEditing) { setEditingField(null); } else {
+                                  setEditingField(fieldId); setExpandedField(fieldId);
+                                  setEditFieldData((p) => ({ ...p, [fieldId]: { label: f.label || "", type: f.type, showWhenKey: (f.showWhen && f.showWhen.key) || "", showWhenValue: (f.showWhen && f.showWhen.value) || "" } }));
+                                }
+                              }}>{isEditing ? "Done" : "Edit"}</button>
+                              <button style={{ ...css.btnDanger, fontSize: 11, padding: "0 3px" }} onClick={(e) => { e.stopPropagation(); removeField(id, f.key, isDef && !isOverridden); }}>×</button>
                             </div>
-                            <div style={{ display: "flex", gap: 4 }}>
-                              <input style={{ ...css.input, flex: 1, fontSize: 11, padding: "3px 6px" }}
-                                placeholder={"New " + (f.label || f.key).toLowerCase() + " type..."}
-                                value={(newOptInput[id + ":" + f.key]) || ""}
-                                onChange={(e) => setNewOptInput((p) => ({ ...p, [id + ":" + f.key]: e.target.value }))}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") {
-                                    addConfigOption(id, f.key, newOptInput[id + ":" + f.key]);
-                                    setNewOptInput((p) => ({ ...p, [id + ":" + f.key]: "" }));
-                                  }
-                                }}
-                              />
-                              <button style={{ ...css.btn, fontSize: 11, padding: "3px 8px" }} onClick={() => {
-                                addConfigOption(id, f.key, newOptInput[id + ":" + f.key]);
-                                setNewOptInput((p) => ({ ...p, [id + ":" + f.key]: "" }));
-                              }}>+ Add</button>
-                            </div>
+
+                            {/* Expanded field content */}
+                            {isFieldOpen && (
+                              <div style={{ padding: "6px 8px", background: C.surface2, borderRadius: "0 0 3px 3px", borderTop: "1px solid " + C.border }}>
+
+                                {/* Edit form */}
+                                {isEditing && (() => {
+                                  const ed = editFieldData[fieldId] || {};
+                                  const siblingFields = item.configFields.filter((sf) => sf.key !== f.key);
+                                  return (
+                                    <div style={{ marginBottom: 8, padding: 6, background: C.surface, borderRadius: 3, border: "1px solid " + C.border }}>
+                                      <div style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center" }}>
+                                        <span style={{ fontSize: 10, color: C.textDim, minWidth: 35 }}>Label</span>
+                                        <input style={{ ...css.input, flex: 1, fontSize: 11, padding: "2px 5px" }} value={ed.label || ""} onChange={(e) => setEditFieldData((p) => ({ ...p, [fieldId]: { ...p[fieldId], label: e.target.value } }))} />
+                                        <span style={{ fontSize: 10, color: C.textDim, minWidth: 28 }}>Type</span>
+                                        <select style={{ ...css.select, width: 80, fontSize: 11, padding: "2px 3px" }} value={ed.type || "number"} onChange={(e) => setEditFieldData((p) => ({ ...p, [fieldId]: { ...p[fieldId], type: e.target.value } }))}>
+                                          {FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                                        </select>
+                                      </div>
+                                      <div style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center" }}>
+                                        <span style={{ fontSize: 10, color: C.textDim, minWidth: 35 }}>Show if</span>
+                                        <select style={{ ...css.select, flex: 1, fontSize: 11, padding: "2px 3px" }} value={ed.showWhenKey || ""} onChange={(e) => setEditFieldData((p) => ({ ...p, [fieldId]: { ...p[fieldId], showWhenKey: e.target.value } }))}>
+                                          <option value="">Always visible</option>
+                                          {siblingFields.map((sf) => <option key={sf.key} value={sf.key}>{sf.key} ({sf.label})</option>)}
+                                        </select>
+                                        {ed.showWhenKey && (
+                                          <>
+                                            <span style={{ fontSize: 10, color: C.textDim }}>=</span>
+                                            <input style={{ ...css.input, width: 70, fontSize: 11, padding: "2px 5px" }} placeholder="Value" value={ed.showWhenValue || ""} onChange={(e) => setEditFieldData((p) => ({ ...p, [fieldId]: { ...p[fieldId], showWhenValue: e.target.value } }))} />
+                                          </>
+                                        )}
+                                      </div>
+                                      <button style={{ ...css.btnAccent, fontSize: 10, padding: "3px 10px" }} onClick={() => {
+                                        const upd = { ...f, label: capitalize(ed.label || f.key), type: ed.type || f.type };
+                                        if (ed.showWhenKey) upd.showWhen = { key: ed.showWhenKey, value: ed.showWhenValue || "true" };
+                                        else delete upd.showWhen;
+                                        if (ed.type === "select" && !upd.options) upd.options = [];
+                                        editField(id, f.key, upd);
+                                        setEditingField(null);
+                                      }}>Save Changes</button>
+                                      {isOverridden && isDef && <button style={{ ...css.btn, fontSize: 10, padding: "3px 8px", marginLeft: 4 }} onClick={() => { fbRemove("spellforge/customFields/" + id + "/" + f.key); setEditingField(null); flash("Reset to default!"); }}>Reset</button>}
+                                    </div>
+                                  );
+                                })()}
+
+                                {/* Select options */}
+                                {isSelect && (
+                                  <>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+                                      {allOpts.map((opt) => (
+                                        <div key={opt} style={{ display: "flex", alignItems: "center", gap: 3, padding: "3px 8px", background: C.surface, borderRadius: 3, border: "1px solid " + C.border, fontSize: 11, color: C.text }}>
+                                          <span>{opt}</span>
+                                          {customOpts.includes(opt) && <button style={{ ...css.btnDanger, fontSize: 11, padding: "0 3px" }} onClick={() => removeConfigOption(id, f.key, opt)}>×</button>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <div style={{ display: "flex", gap: 4 }}>
+                                      <input style={{ ...css.input, flex: 1, fontSize: 11, padding: "3px 6px" }}
+                                        placeholder={"New " + (f.label || f.key).toLowerCase() + " option..."}
+                                        value={(newOptInput[fieldId]) || ""}
+                                        onChange={(e) => setNewOptInput((p) => ({ ...p, [fieldId]: e.target.value }))}
+                                        onKeyDown={(e) => { if (e.key === "Enter") { addConfigOption(id, f.key, newOptInput[fieldId]); setNewOptInput((p) => ({ ...p, [fieldId]: "" })); } }}
+                                      />
+                                      <button style={{ ...css.btn, fontSize: 11, padding: "3px 8px" }} onClick={() => { addConfigOption(id, f.key, newOptInput[fieldId]); setNewOptInput((p) => ({ ...p, [fieldId]: "" })); }}>+ Add</button>
+                                    </div>
+                                  </>
+                                )}
+
+                                {!isSelect && !isEditing && <div style={{ fontSize: 11, color: C.textDim }}>Click Edit to modify this field</div>}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
-                      {item.configFields.filter((f) => f.type === "select").length === 0 && (
-                        <div style={{ fontSize: 11, color: C.textDim }}>No expandable option fields</div>
+
+                      {/* Removed fields restore */}
+                      {getRemovedFieldsForItem(id).length > 0 && (
+                        <div style={{ marginTop: 6, padding: "4px 8px", background: C.danger + "08", borderRadius: 3, border: "1px solid " + C.danger + "20" }}>
+                          <div style={{ fontSize: 10, color: C.textDim, marginBottom: 4 }}>Removed fields:</div>
+                          {getRemovedFieldsForItem(id).map((fk) => (
+                            <div key={fk} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, marginBottom: 2 }}>
+                              <span style={{ color: C.textDim, textDecoration: "line-through" }}>{fk}</span>
+                              <button style={{ ...css.btn, fontSize: 10, padding: "1px 6px", color: C.success, borderColor: C.success + "40" }} onClick={() => restoreField(id, fk)}>Restore</button>
+                            </div>
+                          ))}
+                        </div>
                       )}
+
+                      {/* Add new field */}
+                      <div style={{ marginTop: 8, padding: 8, border: "1px dashed " + C.border, borderRadius: 4 }}>
+                        <div style={{ fontSize: 11, color: C.textDim, marginBottom: 6 }}>Add Field</div>
+                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                          <input style={{ ...css.input, width: 80, fontSize: 11, padding: "3px 6px" }}
+                            placeholder="Key"
+                            value={(newFieldInput[id] && newFieldInput[id].key) || ""}
+                            onChange={(e) => setNewFieldInput((p) => ({ ...p, [id]: { ...p[id], key: e.target.value } }))}
+                          />
+                          <input style={{ ...css.input, flex: 1, fontSize: 11, padding: "3px 6px" }}
+                            placeholder="Label"
+                            value={(newFieldInput[id] && newFieldInput[id].label) || ""}
+                            onChange={(e) => setNewFieldInput((p) => ({ ...p, [id]: { ...p[id], label: e.target.value } }))}
+                          />
+                          <select style={{ ...css.select, width: 90, fontSize: 11, padding: "3px 4px" }}
+                            value={(newFieldInput[id] && newFieldInput[id].type) || "number"}
+                            onChange={(e) => setNewFieldInput((p) => ({ ...p, [id]: { ...p[id], type: e.target.value } }))}
+                          >
+                            {FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                          <button style={{ ...css.btn, fontSize: 11, padding: "3px 8px" }} onClick={() => {
+                            const fi = newFieldInput[id] || {};
+                            if (!fi.key) return;
+                            addCustomField(id, {
+                              key: fi.key.toLowerCase().replace(/\s+/g, "_"),
+                              label: capitalize(fi.label || fi.key),
+                              type: fi.type || "number",
+                              ...(fi.type === "select" ? { options: [] } : {}),
+                            });
+                            setNewFieldInput((p) => ({ ...p, [id]: {} }));
+                          }}>+ Add</button>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>;
@@ -978,7 +1192,7 @@ function SpellForge() {
                       <input style={{ ...css.input, flex: 1 }} placeholder="Name" value={(regForm[regTab] && regForm[regTab].name) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], name: e.target.value } }))} />
                     </div>
                     {(regTab === "targeters" || regTab === "resolutions") && <div style={css.row}><input style={{ ...css.input, flex: 1 }} placeholder="Description" value={(regForm[regTab] && regForm[regTab].desc) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], desc: e.target.value } }))} /></div>}
-                    {(regTab === "selections" || regTab === "keywords") && <div style={css.row}><input style={{ ...css.input, flex: 1 }} placeholder="Params (comma-separated)" value={(regForm[regTab] && regForm[regTab].paramStr) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], paramStr: e.target.value } }))} /></div>}
+                    {(regTab === "targeters" || regTab === "selections" || regTab === "resolutions" || regTab === "keywords") && <div style={css.row}><input style={{ ...css.input, flex: 1 }} placeholder={regTab === "keywords" ? "Params (comma-separated, e.g. amount,type)" : "Initial fields (optional, comma-separated — or add later via expand)"} value={(regForm[regTab] && regForm[regTab].paramStr) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], paramStr: e.target.value } }))} /></div>}
                     {regTab === "selMods" && <div style={{ ...css.row, marginTop: 4 }}>
                       <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: C.textDim, cursor: "pointer" }}>
                         <input type="checkbox" checked={(regForm[regTab] && regForm[regTab].hasParam) || false} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], hasParam: e.target.checked } }))} /> Has param
