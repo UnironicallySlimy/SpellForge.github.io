@@ -55,23 +55,20 @@ const DEF_TARGETERS = [
 ];
 
 const DEF_SELECTIONS = [
-  { id: "Self", name: "Self", configFields: [] },
-  { id: "Overlap", name: "Overlap", configFields: [] },
-  { id: "Nearest_N", name: "Nearest N", configFields: [{ key: "n", label: "N", type: "number" }] },
-  { id: "Chain", name: "Chain", configFields: [{ key: "jumps", label: "Jumps", type: "number" }, { key: "range", label: "Range", type: "number" }] },
-  { id: "All_Alive", name: "All Alive", configFields: [] },
+  { id: "Self", name: "Self", desc: "Caster only", configFields: [] },
+  { id: "Overlap", name: "Overlap", desc: "Physics query against stencil collider", configFields: [] },
+  { id: "Nearest_N", name: "Nearest N", desc: "N nearest alive entities to origin", configFields: [{ key: "n", label: "N", type: "number" }] },
+  { id: "Chain", name: "Chain", desc: "Hops from primary target", configFields: [{ key: "jumps", label: "Jumps", type: "number" }, { key: "range", label: "Range", type: "number" }] },
+  { id: "All_Alive", name: "All Alive", desc: "Every alive entity", configFields: [] },
 ];
 
 const DEF_SEL_MODS = [
-  { id: "Enemies", name: "Enemies" },
-  { id: "Allies", name: "Allies" },
-  { id: "Any", name: "Any" },
-  { id: "Exclude_Self", name: "Exclude Self" },
-  { id: "Max", name: "Max", hasParam: true, paramKey: "n", def: "3" },
-  { id: "Nearest", name: "Sort Nearest" },
-  { id: "Furthest", name: "Sort Furthest" },
-  { id: "Lowest_Hp", name: "Sort Lowest HP" },
-  { id: "Highest_Hp", name: "Sort Highest HP" },
+  { id: "Enemies", name: "Enemies", desc: "Hostile only", configFields: [] },
+  { id: "Allies", name: "Allies", desc: "Friendly only", configFields: [] },
+  { id: "Any", name: "Any", desc: "All teams", configFields: [] },
+  { id: "Exclude_Self", name: "Exclude Self", desc: "Removes caster", configFields: [] },
+  { id: "Max", name: "Max", desc: "Cap results", configFields: [{ key: "n", label: "N", type: "number" }] },
+  { id: "Sort", name: "Sort", desc: "Order results", configFields: [{ key: "mode", label: "Mode", type: "select", options: ["Nearest", "Furthest", "Lowest_Hp", "Highest_Hp"] }] },
 ];
 
 const DEF_RESOLUTIONS = [
@@ -103,16 +100,16 @@ const DEF_RESOLUTIONS = [
 ];
 
 const DEF_KEYWORDS = [
-  { id: "Damage", params: [{ key: "amount", ph: "5 + 3 * F" }, { key: "type", ph: "Fire", type: "element" }] },
-  { id: "DoT", params: [{ key: "damage_per_tick", ph: "2" }, { key: "duration", ph: "3" }, { key: "type", ph: "Fire", type: "element" }] },
-  { id: "Slow", params: [{ key: "amount_pct", ph: "30" }, { key: "duration", ph: "3" }] },
-  { id: "Stun", params: [{ key: "duration", ph: "1.5" }] },
-  { id: "Knockback", params: [{ key: "force", ph: "4" }] },
-  { id: "Pull", params: [{ key: "force", ph: "4" }] },
-  { id: "Root", params: [{ key: "duration", ph: "2" }] },
-  { id: "Heal", params: [{ key: "amount", ph: "5 + 2 * E" }] },
-  { id: "Shield", params: [{ key: "amount", ph: "10" }, { key: "duration", ph: "5" }] },
-  { id: "Spawn", params: [{ key: "type", ph: "Placeable", type: "select", options: ["Placeable"] }, { key: "trigger", ph: "Passive", type: "select", options: ["Passive", "Pulse", "On_Enter"] }, { key: "duration", ph: "5" }, { key: "stencil", ph: "Circle", type: "stencil" }, { key: "scale", ph: "3" }] },
+  { id: "Damage", configFields: [{ key: "amount", label: "Amount", type: "text", ph: "5 + 3 * F" }, { key: "type", label: "Type", type: "element" }] },
+  { id: "DoT", configFields: [{ key: "damage_per_tick", label: "Damage Per Tick", type: "text", ph: "2" }, { key: "duration", label: "Duration", type: "text", ph: "3" }, { key: "type", label: "Type", type: "element" }] },
+  { id: "Slow", configFields: [{ key: "amount_pct", label: "Amount %", type: "text", ph: "30" }, { key: "duration", label: "Duration", type: "text", ph: "3" }] },
+  { id: "Stun", configFields: [{ key: "duration", label: "Duration", type: "text", ph: "1.5" }] },
+  { id: "Knockback", configFields: [{ key: "force", label: "Force", type: "text", ph: "4" }] },
+  { id: "Pull", configFields: [{ key: "force", label: "Force", type: "text", ph: "4" }] },
+  { id: "Root", configFields: [{ key: "duration", label: "Duration", type: "text", ph: "2" }] },
+  { id: "Heal", configFields: [{ key: "amount", label: "Amount", type: "text", ph: "5 + 2 * E" }] },
+  { id: "Shield", configFields: [{ key: "amount", label: "Amount", type: "text", ph: "10" }, { key: "duration", label: "Duration", type: "text", ph: "5" }] },
+  { id: "Spawn", configFields: [{ key: "type", label: "Type", type: "select", options: ["Placeable"] }, { key: "trigger", label: "Trigger", type: "select", options: ["Passive", "Pulse", "On_Enter"] }, { key: "duration", label: "Duration", type: "text", ph: "5" }, { key: "stencil", label: "Stencil", type: "stencil" }, { key: "scale", label: "Scale", type: "text", ph: "3" }] },
 ];
 
 const DEF_SHAPES = ["Circle", "Cone", "Line"];
@@ -134,7 +131,7 @@ function makeSpell() {
     stencilShape: "circle", stencilScale: "1",
     targeter: "Self", targeterConfig: {},
     selStrategy: "Overlap", selConfig: {},
-    selMods: [], selModParams: {},
+    selMods: [], selModConfigs: {},
     resolution: "Instant", config: {},
     keywords: [], excess: [], flavor: "",
   };
@@ -155,7 +152,8 @@ function toYaml(s, reg) {
   if (sCfg.length) sel += "(" + sCfg.map(([k, v]) => k + "=" + v).join(", ") + ")";
   for (const m of s.selMods || []) {
     const md = reg.selMods.find((x) => x.id === m);
-    if (md && md.hasParam) sel += " + " + m + "(" + ((s.selModParams && s.selModParams[m]) || md.def || "") + ")";
+    const mCfg = Object.entries((s.selModConfigs && s.selModConfigs[m]) || {}).filter(([, v]) => v !== "" && v != null);
+    if (mCfg.length) sel += " + " + m + "(" + mCfg.map(([k, v]) => k + "=" + v).join(", ") + ")";
     else sel += " + " + m;
   }
   L.push("  selection: " + sel);
@@ -165,7 +163,7 @@ function toYaml(s, reg) {
   if (s.keywords && s.keywords.length) {
     L.push("  keywords:");
     s.keywords.forEach((kw) => {
-      const pp = Object.entries(kw.params || {}).filter(([, v]) => v !== "").map(([k, v]) => k + "=" + v).join(", ");
+      const pp = Object.entries(kw.config || {}).filter(([, v]) => v !== "").map(([k, v]) => k + "=" + v).join(", ");
       let line = kw._keyword_type + "(" + pp + ")";
       if (kw.chance) line += " + Chance(" + kw.chance + ")";
       L.push("    - " + line);
@@ -256,9 +254,9 @@ function SpellForge() {
       elements: [...filterDef(DEF_ELEMENTS, "elements"), ...objToArr(customReg.elements)],
       targeters: mergeFields([...filterDef(DEF_TARGETERS, "targeters"), ...objToArr(customReg.targeters)]),
       selections: mergeFields([...filterDef(DEF_SELECTIONS, "selections"), ...objToArr(customReg.selections)]),
-      selMods: [...filterDef(DEF_SEL_MODS, "selMods"), ...objToArr(customReg.selMods)],
+      selMods: mergeFields([...filterDef(DEF_SEL_MODS, "selMods"), ...objToArr(customReg.selMods)]),
       resolutions: mergeFields([...filterDef(DEF_RESOLUTIONS, "resolutions"), ...objToArr(customReg.resolutions)]),
-      keywords: [...filterDef(DEF_KEYWORDS, "keywords"), ...objToArr(customReg.keywords)],
+      keywords: mergeFields([...filterDef(DEF_KEYWORDS, "keywords"), ...objToArr(customReg.keywords)]),
       shapes: [...filterDef(DEF_SHAPES, "shapes"), ...objKeys(customReg.shapes)],
     };
   }, [customReg, removedDefs, customFields]);
@@ -291,9 +289,9 @@ function SpellForge() {
             selMods: (s.selMods || []).map((m) => capitalize(m)),
             targeterConfig: s.targeterConfig || (s.targeterRange ? { range: s.targeterRange } : {}),
             selConfig: s.selConfig || s.selParams || {},
-            selModParams: s.selModParams || {},
+            selModConfigs: s.selModConfigs || (s.selModParams ? Object.fromEntries(Object.entries(s.selModParams).map(([k, v]) => [k, { n: v }])) : {}),
             config: s.config || {},
-            keywords: (s.keywords || []).map((k) => ({ ...k, _keyword_type: k._keyword_type || k.type || "Damage", params: k.params || {} })),
+            keywords: (s.keywords || []).map((k) => ({ ...k, _keyword_type: k._keyword_type || k.type || "Damage", config: k.config || k.params || {} })),
             excess: (s.excess || []).map((e) => ({ ...e, ops: e.ops || [] })),
           }));
           setSpells(clean);
@@ -422,9 +420,9 @@ function SpellForge() {
     toSave.config = cleanConfig;
     // Capitalize keyword param values
     toSave.keywords = (toSave.keywords || []).map((kw) => {
-      const params = {};
-      Object.entries(kw.params || {}).forEach(([k, v]) => { params[k] = (typeof v === "string" && v !== "") ? capitalize(v) : v; });
-      return { ...kw, params };
+      const config = {};
+      Object.entries(kw.config || {}).forEach(([k, v]) => { config[k] = (typeof v === "string" && v !== "") ? capitalize(v) : v; });
+      return { ...kw, config };
     });
     setDraft(toSave);
     fbSet("spellforge/spells/" + toSave.id, toSave);
@@ -444,23 +442,23 @@ function SpellForge() {
   const toggleMod = (id) => setDraft((d) => ({ ...d, selMods: d.selMods.includes(id) ? d.selMods.filter((m) => m !== id) : [...d.selMods, id] }));
   const upTargeterConfig = (k, v) => setDraft((d) => ({ ...d, targeterConfig: { ...d.targeterConfig, [k]: v } }));
   const upSelConfig = (k, v) => setDraft((d) => ({ ...d, selConfig: { ...d.selConfig, [k]: v } }));
-  const upSelModParam = (id, v) => setDraft((d) => ({ ...d, selModParams: { ...d.selModParams, [id]: v } }));
+  const upSelModConfig = (modId, key, val) => setDraft((d) => ({ ...d, selModConfigs: { ...d.selModConfigs, [modId]: { ...(d.selModConfigs && d.selModConfigs[modId] || {}), [key]: val } } }));
 
   const addKeyword = () => {
-    const kw = reg.keywords[0]; const params = {};
-    kw.params.forEach((p) => (params[p.key] = ""));
-    setDraft((d) => ({ ...d, keywords: [...d.keywords, { _keyword_type: kw.id, params, chance: "" }] }));
+    const kw = reg.keywords[0]; const config = {};
+    if (kw.configFields) kw.configFields.forEach((f) => (config[f.key] = ""));
+    setDraft((d) => ({ ...d, keywords: [...d.keywords, { _keyword_type: kw.id, config, chance: "" }] }));
   };
   const removeKeyword = (i) => setDraft((d) => ({ ...d, keywords: d.keywords.filter((_, j) => j !== i) }));
   const upKeyword = (i, field, val) => {
     setDraft((d) => {
       const kws = [...d.keywords];
       if (field === "_keyword_type") {
-        const def = reg.keywords.find((k) => k.id === val); const params = {};
-        if (def) def.params.forEach((p) => (params[p.key] = ""));
-        kws[i] = { ...kws[i], _keyword_type: val, params };
+        const def = reg.keywords.find((k) => k.id === val); const config = {};
+        if (def && def.configFields) def.configFields.forEach((f) => (config[f.key] = ""));
+        kws[i] = { ...kws[i], _keyword_type: val, config };
       } else if (field === "chance") kws[i] = { ...kws[i], chance: val };
-      else kws[i] = { ...kws[i], params: { ...kws[i].params, [field]: val } };
+      else kws[i] = { ...kws[i], config: { ...kws[i].config, [field]: val } };
       return { ...d, keywords: kws };
     });
   };
@@ -504,7 +502,7 @@ function SpellForge() {
               {getFieldOptions(resId || "", f.key, f.options).map((o) => <option key={o} value={o} />)}
             </datalist>
           </div>
-        ) : <input style={{ ...css.input, flex: 1 }} type={f.type || "text"} placeholder={f.placeholder || ""} value={configObj[f.key] || ""} onChange={(e) => updateFn(f.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()} />}
+        ) : <input style={{ ...css.input, flex: 1 }} type={f.type || "text"} placeholder={f.ph || f.placeholder || ""} value={configObj[f.key] || ""} onChange={(e) => updateFn(f.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()} />}
       </div>
     ));
   };
@@ -529,8 +527,11 @@ function SpellForge() {
   const addRegItem = (cat) => {
     if (!regForm[cat] || !regForm[cat].id) return;
     const item = { ...regForm[cat], id: capitalize(regForm[cat].id), name: capitalize(regForm[cat].name || "") };
-    if (cat === "keywords") { item.params = (item.paramStr || "").split(",").filter(Boolean).map((p) => ({ key: p.trim(), ph: "" })); delete item.paramStr; }
-    if (cat === "selections" || cat === "targeters" || cat === "resolutions") {
+    if (cat === "keywords") {
+      item.configFields = (item.paramStr || "").split(",").filter(Boolean).map((p) => ({ key: p.trim(), label: capitalize(p.trim()), type: "text" }));
+      delete item.paramStr;
+    }
+    if (cat === "selections" || cat === "targeters" || cat === "resolutions" || cat === "selMods") {
       item.configFields = (item.paramStr || "").split(",").filter(Boolean).map((p) => ({ key: p.trim(), label: capitalize(p.trim()), type: "number" }));
       delete item.paramStr;
     }
@@ -612,7 +613,7 @@ function SpellForge() {
 
   const isDefaultField = (itemId, fieldKey) => {
     // Check if this field exists in the original DEF_ arrays
-    const allDefs = [...DEF_TARGETERS, ...DEF_SELECTIONS, ...DEF_RESOLUTIONS];
+    const allDefs = [...DEF_TARGETERS, ...DEF_SELECTIONS, ...DEF_SEL_MODS, ...DEF_RESOLUTIONS, ...DEF_KEYWORDS];
     const item = allDefs.find((d) => d.id === itemId);
     return item && item.configFields && item.configFields.some((f) => f.key === fieldKey);
   };
@@ -622,7 +623,7 @@ function SpellForge() {
   const getRemovedFieldsForItem = (itemId) => objKeys(removedFields[itemId] || {});
 
   const getDefaultFieldDef = (itemId, fieldKey) => {
-    const allDefs = [...DEF_TARGETERS, ...DEF_SELECTIONS, ...DEF_RESOLUTIONS];
+    const allDefs = [...DEF_TARGETERS, ...DEF_SELECTIONS, ...DEF_SEL_MODS, ...DEF_RESOLUTIONS, ...DEF_KEYWORDS];
     const item = allDefs.find((d) => d.id === itemId);
     return item && item.configFields && item.configFields.find((f) => f.key === fieldKey);
   };
@@ -811,10 +812,25 @@ function SpellForge() {
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                   {reg.selMods.map((m) => {
                     const on = (draft.selMods || []).includes(m.id);
+                    const hasFields = m.configFields && m.configFields.length > 0;
+                    const modCfg = (draft.selModConfigs && draft.selModConfigs[m.id]) || {};
                     return (
                       <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 3 }}>
                         <button onClick={() => toggleMod(m.id)} style={{ ...css.btn, fontSize: 11, padding: "3px 8px", background: on ? C.accent + "25" : C.surface2, borderColor: on ? C.accent + "60" : C.border, color: on ? C.accent : C.textDim }}>{m.name}</button>
-                        {on && m.hasParam && <input style={{ ...css.input, width: 40, padding: "3px 5px", fontSize: 11 }} value={(draft.selModParams && draft.selModParams[m.id]) ?? m.def ?? ""} onChange={(e) => upSelModParam(m.id, e.target.value)} />}
+                        {on && hasFields && m.configFields.map((f) => (
+                          f.type === "select" ? (
+                            <select key={f.key} style={{ ...css.select, width: 90, padding: "3px 5px", fontSize: 11 }}
+                              value={modCfg[f.key] || ""}
+                              onChange={(e) => upSelModConfig(m.id, f.key, e.target.value)}>
+                              <option value="">—</option>
+                              {getFieldOptions(m.id, f.key, f.options).map((o) => <option key={o} value={o}>{o}</option>)}
+                            </select>
+                          ) : (
+                            <input key={f.key} style={{ ...css.input, width: 40, padding: "3px 5px", fontSize: 11 }} placeholder={f.label || f.key}
+                              value={modCfg[f.key] || ""}
+                              onChange={(e) => upSelModConfig(m.id, f.key, e.target.value)} />
+                          )
+                        ))}
                       </div>
                     );
                   })}
@@ -851,31 +867,12 @@ function SpellForge() {
                         <input style={{ ...css.input, width: 50, padding: "2px 5px", fontSize: 11 }} placeholder="—" value={kw.chance || ""} onChange={(e) => upKeyword(i, "chance", e.target.value)} onKeyDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} />
                         <button style={css.btnDanger} onClick={() => removeKeyword(i)}>×</button>
                       </div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {kwDef && kwDef.params.map((p) => (
-                          <div key={p.key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                            <span style={{ fontSize: 11, color: C.textDim }}>{p.key}</span>
-                            {p.type === "element" ? (
-                              <select style={{ ...css.select, width: 100, fontSize: 12, padding: "3px 6px" }} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
-                                <option value="">—</option>
-                                {reg.elements.map((el) => <option key={el.id} value={el.name}>{el.name}</option>)}
-                              </select>
-                            ) : p.type === "stencil" ? (
-                              <select style={{ ...css.select, width: 100, fontSize: 12, padding: "3px 6px" }} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
-                                <option value="">—</option>
-                                {reg.shapes.map((s) => <option key={s} value={s}>{s}</option>)}
-                              </select>
-                            ) : p.type === "select" ? (
-                              <select style={{ ...css.select, width: 100, fontSize: 12, padding: "3px 6px" }} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
-                                <option value="">—</option>
-                                {(p.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
-                              </select>
-                            ) : (
-                              <input style={{ ...css.input, width: 100, padding: "3px 6px", fontSize: 12 }} placeholder={p.ph} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} />
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                      {kwDef && kwDef.configFields && renderConfigFields(
+                        kwDef.configFields,
+                        kw.config || {},
+                        (key, val) => upKeyword(i, key, val),
+                        kw._keyword_type
+                      )}
                     </div>
                   );
                 })}
@@ -900,8 +897,8 @@ function SpellForge() {
                       const targetOpts = [];
                       (draft.keywords || []).forEach((kw) => {
                         const kwDef = reg.keywords.find((k) => k.id === kw._keyword_type);
-                        if (kwDef) kwDef.params.forEach((p) => {
-                          const t = kw._keyword_type + "." + p.key;
+                        if (kwDef && kwDef.configFields) kwDef.configFields.forEach((f) => {
+                          const t = kw._keyword_type + "." + f.key;
                           if (!targetOpts.includes(t)) targetOpts.push(t);
                         });
                       });
@@ -955,7 +952,7 @@ function SpellForge() {
               <div style={css.sectionTitle}><span>◆</span> {regTab === "selMods" ? "Selection Modifiers" : regTab}</div>
               {(regTab === "shapes" ? reg.shapes : reg[regTab]).map((item, i) => {
                 const id = regTab === "shapes" ? item : item.id;
-                const expandable = ["targeters", "selections", "resolutions"].includes(regTab);
+                const expandable = ["targeters", "selections", "selMods", "resolutions", "keywords"].includes(regTab);
                 const isExpanded = expandable && expandedRes === (regTab + ":" + id);
                 const hasConfigFields = expandable && item.configFields && item.configFields.length > 0;
 
@@ -971,7 +968,6 @@ function SpellForge() {
                         <span style={{ flex: 1, color: C.textDim, fontSize: 11 }}>
                           {item.name || ""} {item.desc ? "— " + item.desc : ""}
                           {item.configFields && item.configFields.length > 0 && " (" + item.configFields.map((f) => f.key).join(", ") + ")"}
-                          {item.hasParam && " (" + item.paramKey + ")"}
                         </span>
                       </>
                     )}
@@ -1191,14 +1187,8 @@ function SpellForge() {
                       <input style={{ ...css.input, width: 100 }} placeholder="ID" value={(regForm[regTab] && regForm[regTab].id) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], id: e.target.value } }))} />
                       <input style={{ ...css.input, flex: 1 }} placeholder="Name" value={(regForm[regTab] && regForm[regTab].name) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], name: e.target.value } }))} />
                     </div>
-                    {(regTab === "targeters" || regTab === "resolutions") && <div style={css.row}><input style={{ ...css.input, flex: 1 }} placeholder="Description" value={(regForm[regTab] && regForm[regTab].desc) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], desc: e.target.value } }))} /></div>}
-                    {(regTab === "targeters" || regTab === "selections" || regTab === "resolutions" || regTab === "keywords") && <div style={css.row}><input style={{ ...css.input, flex: 1 }} placeholder={regTab === "keywords" ? "Params (comma-separated, e.g. amount,type)" : "Initial fields (optional, comma-separated — or add later via expand)"} value={(regForm[regTab] && regForm[regTab].paramStr) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], paramStr: e.target.value } }))} /></div>}
-                    {regTab === "selMods" && <div style={{ ...css.row, marginTop: 4 }}>
-                      <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: C.textDim, cursor: "pointer" }}>
-                        <input type="checkbox" checked={(regForm[regTab] && regForm[regTab].hasParam) || false} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], hasParam: e.target.checked } }))} /> Has param
-                      </label>
-                      {regForm[regTab] && regForm[regTab].hasParam && <input style={{ ...css.input, width: 80 }} placeholder="Param key" value={(regForm[regTab] && regForm[regTab].paramKey) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], paramKey: e.target.value } }))} />}
-                    </div>}
+                    {(regTab === "targeters" || regTab === "selections" || regTab === "selMods" || regTab === "resolutions") && <div style={css.row}><input style={{ ...css.input, flex: 1 }} placeholder="Description" value={(regForm[regTab] && regForm[regTab].desc) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], desc: e.target.value } }))} /></div>}
+                    {(regTab === "targeters" || regTab === "selections" || regTab === "selMods" || regTab === "resolutions" || regTab === "keywords") && <div style={css.row}><input style={{ ...css.input, flex: 1 }} placeholder={regTab === "keywords" ? "Params (comma-separated, e.g. amount,type)" : "Initial fields (optional, comma-separated — or add later via expand)"} value={(regForm[regTab] && regForm[regTab].paramStr) || ""} onChange={(e) => setRegForm((f) => ({ ...f, [regTab]: { ...f[regTab], paramStr: e.target.value } }))} /></div>}
                     <button style={{ ...css.btn, marginTop: 6 }} onClick={() => addRegItem(regTab)}>Add</button>
                   </>
                 )}
