@@ -101,8 +101,8 @@ const DEF_RESOLUTIONS = [
 ];
 
 const DEF_KEYWORDS = [
-  { id: "Damage", params: [{ key: "amount", ph: "5 + 3 * F" }, { key: "type", ph: "Fire" }] },
-  { id: "DoT", params: [{ key: "damage_per_tick", ph: "2" }, { key: "duration", ph: "3" }, { key: "type", ph: "Fire" }] },
+  { id: "Damage", params: [{ key: "amount", ph: "5 + 3 * F" }, { key: "type", ph: "Fire", type: "element" }] },
+  { id: "DoT", params: [{ key: "damage_per_tick", ph: "2" }, { key: "duration", ph: "3" }, { key: "type", ph: "Fire", type: "element" }] },
   { id: "Slow", params: [{ key: "amount_pct", ph: "30" }, { key: "duration", ph: "3" }] },
   { id: "Stun", params: [{ key: "duration", ph: "1.5" }] },
   { id: "Knockback", params: [{ key: "force", ph: "4" }] },
@@ -748,30 +748,35 @@ function SpellForge() {
                   return (
                     <div key={i} style={{ marginBottom: 8, padding: 8, background: C.surface2, borderRadius: 4, border: "1px solid " + C.border }}>
                       <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
-                        <select style={{ ...css.select, fontSize: 12, fontWeight: 600 }} value={kw.type} onChange={(e) => upKeyword(i, "type", e.target.value)}>
+                        <select style={{ ...css.select, fontSize: 12, fontWeight: 600 }} value={kw.type} onChange={(e) => upKeyword(i, "type", e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
                           {reg.keywords.map((k) => <option key={k.id} value={k.id}>{k.id}</option>)}
                         </select>
                         <div style={{ flex: 1 }} />
                         <span style={{ fontSize: 11, color: C.textDim }}>Chance</span>
-                        <input style={{ ...css.input, width: 50, padding: "2px 5px", fontSize: 11 }} placeholder="—" value={kw.chance || ""} onChange={(e) => upKeyword(i, "chance", e.target.value)} />
+                        <input style={{ ...css.input, width: 50, padding: "2px 5px", fontSize: 11 }} placeholder="—" value={kw.chance || ""} onChange={(e) => upKeyword(i, "chance", e.target.value)} onKeyDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} />
                         <button style={css.btnDanger} onClick={() => removeKeyword(i)}>×</button>
                       </div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {kwDef && kwDef.params.map((p) => (
                           <div key={p.key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                             <span style={{ fontSize: 11, color: C.textDim }}>{p.key}</span>
-                            {p.type === "stencil" ? (
-                              <select style={{ ...css.select, width: 100, fontSize: 12, padding: "3px 6px" }} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)}>
+                            {p.type === "element" ? (
+                              <select style={{ ...css.select, width: 100, fontSize: 12, padding: "3px 6px" }} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
+                                <option value="">—</option>
+                                {reg.elements.map((el) => <option key={el.id} value={el.name}>{el.name}</option>)}
+                              </select>
+                            ) : p.type === "stencil" ? (
+                              <select style={{ ...css.select, width: 100, fontSize: 12, padding: "3px 6px" }} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
                                 <option value="">—</option>
                                 {reg.shapes.map((s) => <option key={s} value={s}>{s}</option>)}
                               </select>
                             ) : p.type === "select" ? (
-                              <select style={{ ...css.select, width: 100, fontSize: 12, padding: "3px 6px" }} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)}>
+                              <select style={{ ...css.select, width: 100, fontSize: 12, padding: "3px 6px" }} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
                                 <option value="">—</option>
                                 {(p.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
                               </select>
                             ) : (
-                              <input style={{ ...css.input, width: 100, padding: "3px 6px", fontSize: 12 }} placeholder={p.ph} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)} />
+                              <input style={{ ...css.input, width: 100, padding: "3px 6px", fontSize: 12 }} placeholder={p.ph} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} />
                             )}
                           </div>
                         ))}
