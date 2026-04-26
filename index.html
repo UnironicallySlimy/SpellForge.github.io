@@ -32,13 +32,17 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
 const DEF_ELEMENTS = [
   { id: "F", name: "Fire", color: "#ff6b35" },
-  { id: "W", name: "Wind", color: "#7ec8e3" },
+  { id: "I", name: "Ice", color: "#85c1e9" },
   { id: "E", name: "Earth", color: "#a67c52" },
-  { id: "A", name: "Arcane", color: "#b07ce8" },
+  { id: "W", name: "Wind", color: "#7ec8e3" },
   { id: "L", name: "Lightning", color: "#f0d264" },
   { id: "R", name: "Runic", color: "#4ecdc4" },
+  { id: "N", name: "Energy", color: "#e8c44a" },
   { id: "B", name: "Blight", color: "#6abf69" },
-  { id: "I", name: "Ice", color: "#85c1e9" },
+  { id: "P", name: "Plant", color: "#2ecc71" },
+  { id: "O", name: "Force", color: "#e67e22" },
+  { id: "C", name: "Chaos", color: "#9b59b6" },
+  { id: "S", name: "Squared", color: "#e74c8b" },
 ];
 
 const DEF_TARGETERS = [
@@ -73,10 +77,13 @@ const DEF_RESOLUTIONS = [
   {
     id: "projectile", name: "Projectile", configFields: [
       { key: "speed", label: "Speed", type: "number" },
-      { key: "travel", label: "Travel", type: "select", options: ["linear", "homing", "arc"] },
+      { key: "travel", label: "Travel", type: "select", options: ["Linear", "Homing", "Arc"] },
       { key: "max_range", label: "Max Range", type: "number" },
-      { key: "piercing", label: "Piercing (-1 = infinite)", type: "number" },
-      { key: "aoe_on_impact", label: "AoE on Impact", type: "text", placeholder: "Circle, 3" },
+      { key: "piercing", label: "Piercing", type: "checkbox" },
+      { key: "pierce_count", label: "Pierce Count (-1 = Infinite)", type: "number", showWhen: { key: "piercing", value: "true" } },
+      { key: "aoe_on_impact", label: "AoE On Impact", type: "checkbox" },
+      { key: "aoe_shape", label: "AoE Shape", type: "stencil", showWhen: { key: "aoe_on_impact", value: "true" } },
+      { key: "aoe_scale", label: "AoE Scale", type: "number", showWhen: { key: "aoe_on_impact", value: "true" } },
     ],
   },
   {
@@ -85,8 +92,8 @@ const DEF_RESOLUTIONS = [
   {
     id: "placeable", name: "Placeable", configFields: [
       { key: "duration", label: "Duration (s)", type: "number" },
-      { key: "trigger", label: "Trigger", type: "select", options: ["passive", "pulse", "on_enter"] },
-      { key: "tick_rate", label: "Tick Rate (s)", type: "number", showWhen: "pulse" },
+      { key: "trigger", label: "Trigger", type: "select", options: ["Passive", "Pulse", "On_Enter"] },
+      { key: "tick_rate", label: "Tick Rate (s)", type: "number", showWhen: { key: "trigger", value: "Pulse" } },
       { key: "activate_once", label: "Activate Once", type: "checkbox" },
       { key: "arm_time", label: "Arm Time (s)", type: "number" },
     ],
@@ -94,8 +101,8 @@ const DEF_RESOLUTIONS = [
 ];
 
 const DEF_KEYWORDS = [
-  { id: "Damage", params: [{ key: "amount", ph: "5 + 3 * F" }, { key: "type", ph: "fire" }] },
-  { id: "DoT", params: [{ key: "damage_per_tick", ph: "2" }, { key: "duration", ph: "3" }, { key: "type", ph: "fire" }] },
+  { id: "Damage", params: [{ key: "amount", ph: "5 + 3 * F" }, { key: "type", ph: "Fire" }] },
+  { id: "DoT", params: [{ key: "damage_per_tick", ph: "2" }, { key: "duration", ph: "3" }, { key: "type", ph: "Fire" }] },
   { id: "Slow", params: [{ key: "amount_pct", ph: "30" }, { key: "duration", ph: "3" }] },
   { id: "Stun", params: [{ key: "duration", ph: "1.5" }] },
   { id: "Knockback", params: [{ key: "force", ph: "4" }] },
@@ -103,7 +110,7 @@ const DEF_KEYWORDS = [
   { id: "Root", params: [{ key: "duration", ph: "2" }] },
   { id: "Heal", params: [{ key: "amount", ph: "5 + 2 * E" }] },
   { id: "Shield", params: [{ key: "amount", ph: "10" }, { key: "duration", ph: "5" }] },
-  { id: "Spawn", params: [{ key: "type", ph: "placeable" }, { key: "trigger", ph: "passive" }, { key: "duration", ph: "5" }, { key: "stencil", ph: "Circle" }, { key: "scale", ph: "3" }] },
+  { id: "Spawn", params: [{ key: "type", ph: "Placeable", type: "select", options: ["Placeable"] }, { key: "trigger", ph: "Passive", type: "select", options: ["Passive", "Pulse", "On_Enter"] }, { key: "duration", ph: "5" }, { key: "stencil", ph: "Circle", type: "stencil" }, { key: "scale", ph: "3" }] },
 ];
 
 const DEF_SHAPES = ["Circle", "Cone", "Line"];
@@ -379,6 +386,18 @@ function SpellForge() {
   };
   const saveSpell = () => {
     const toSave = { ...draft, name: capitalize(draft.name) };
+    // Capitalize config values
+    const cleanConfig = {};
+    Object.entries(toSave.config || {}).forEach(([k, v]) => {
+      cleanConfig[k] = (typeof v === "string" && v !== "true" && v !== "") ? capitalize(v) : v;
+    });
+    toSave.config = cleanConfig;
+    // Capitalize keyword param values
+    toSave.keywords = (toSave.keywords || []).map((kw) => {
+      const params = {};
+      Object.entries(kw.params || {}).forEach(([k, v]) => { params[k] = (typeof v === "string" && v !== "") ? capitalize(v) : v; });
+      return { ...kw, params };
+    });
     setDraft(toSave);
     fbSet("spellforge/spells/" + toSave.id, toSave);
     setSelectedId(toSave.id);
@@ -692,7 +711,7 @@ function SpellForge() {
                 {resDef && resDef.configFields && resDef.configFields.length > 0 && (
                   <div style={{ marginTop: 6 }}>
                     <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Config</div>
-                    {resDef.configFields.filter((f) => !f.showWhen || draft.config.trigger === f.showWhen).map((f) => (
+                    {resDef.configFields.filter((f) => !f.showWhen || draft.config[f.showWhen.key] === f.showWhen.value).map((f) => (
                       <div key={f.key} style={css.row}>
                         <span style={{ ...css.label, minWidth: 90 }}>{f.label}</span>
                         {f.type === "checkbox" ? (
@@ -702,6 +721,11 @@ function SpellForge() {
                               {draft.config[f.key] === "true" || draft.config[f.key] === true ? "Yes" : "No"}
                             </span>
                           </label>
+                        ) : f.type === "stencil" ? (
+                          <select style={{ ...css.select, flex: 1 }} value={draft.config[f.key] || ""} onChange={(e) => upConfig(f.key, e.target.value)}>
+                            <option value="">—</option>
+                            {reg.shapes.map((s) => <option key={s} value={s}>{s}</option>)}
+                          </select>
                         ) : f.type === "select" ? (
                           <div style={{ flex: 1, position: "relative" }}>
                             <input list={"dl_" + f.key} style={{ ...css.input }} value={draft.config[f.key] || ""} onChange={(e) => upConfig(f.key, e.target.value)} placeholder="Type or select..." />
@@ -736,7 +760,19 @@ function SpellForge() {
                         {kwDef && kwDef.params.map((p) => (
                           <div key={p.key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                             <span style={{ fontSize: 11, color: C.textDim }}>{p.key}</span>
-                            <input style={{ ...css.input, width: 100, padding: "3px 6px", fontSize: 12 }} placeholder={p.ph} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)} />
+                            {p.type === "stencil" ? (
+                              <select style={{ ...css.select, width: 100, fontSize: 12, padding: "3px 6px" }} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)}>
+                                <option value="">—</option>
+                                {reg.shapes.map((s) => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            ) : p.type === "select" ? (
+                              <select style={{ ...css.select, width: 100, fontSize: 12, padding: "3px 6px" }} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)}>
+                                <option value="">—</option>
+                                {(p.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                            ) : (
+                              <input style={{ ...css.input, width: 100, padding: "3px 6px", fontSize: 12 }} placeholder={p.ph} value={(kw.params && kw.params[p.key]) || ""} onChange={(e) => upKeyword(i, p.key, e.target.value)} />
+                            )}
                           </div>
                         ))}
                       </div>
