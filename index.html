@@ -31,18 +31,14 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
 // ════════════════════════════════════════════════════════════
 
 const DEF_ELEMENTS = [
-  { id: "F", name: "Fire", color: "#ff6b35" },
-  { id: "I", name: "Ice", color: "#85c1e9" },
-  { id: "E", name: "Earth", color: "#a67c52" },
-  { id: "W", name: "Wind", color: "#7ec8e3" },
-  { id: "L", name: "Lightning", color: "#f0d264" },
-  { id: "R", name: "Runic", color: "#4ecdc4" },
+  { id: "F", name: "Fire", color: "#e63e30" },
+  { id: "I", name: "Ice", color: "#00d4ff" },
+  { id: "E", name: "Earth", color: "#8b5e3c" },
+  { id: "W", name: "Wind", color: "#c8ece8" },
+  { id: "L", name: "Lightning", color: "#f5e642" },
+  { id: "R", name: "Runic", color: "#3a7bd5" },
   { id: "N", name: "Energy", color: "#e8c44a" },
-  { id: "B", name: "Blight", color: "#6abf69" },
-  { id: "P", name: "Plant", color: "#2ecc71" },
-  { id: "O", name: "Force", color: "#e67e22" },
-  { id: "C", name: "Chaos", color: "#9b59b6" },
-  { id: "S", name: "Squared", color: "#e74c8b" },
+  { id: "B", name: "Blight", color: "#a14028" },
 ];
 
 const DEF_TARGETERS = [
@@ -243,6 +239,7 @@ function SpellForge() {
   const [expandedRes, setExpandedRes] = useState(null);
   const [expandedField, setExpandedField] = useState(null);
   const [editingField, setEditingField] = useState(null);
+  const [expandedNotes, setExpandedNotes] = useState({});
   const [editFieldData, setEditFieldData] = useState({});
   const [newOptInput, setNewOptInput] = useState({});
   const [newFieldInput, setNewFieldInput] = useState({});
@@ -452,26 +449,24 @@ function SpellForge() {
   const upConfig = (k, v) => setDraft((d) => ({ ...d, config: { ...d.config, [k]: v } }));
   const upSectionNote = (section, val) => setDraft((d) => ({ ...d, section_notes: { ...d.section_notes, [section]: val } }));
 
-  // Reusable inline notes for each section
-  const SectionNote = ({ section }) => {
+  // Render function (NOT a component) for per-section notes
+  const sectionNote = (section) => {
     const val = (draft.section_notes && draft.section_notes[section]) || "";
     const hasNote = val.length > 0;
+    const isOpen = hasNote || expandedNotes[section];
     return (
       <div style={{ marginTop: 6 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 10, color: hasNote ? C.accent : C.textDim }}
-          onClick={() => {
-            const el = document.getElementById("note_" + section);
-            if (el) el.style.display = el.style.display === "none" ? "block" : "none";
-          }}>
-          <span>{hasNote ? "▾" : "▸"}</span>
+          onClick={() => setExpandedNotes((p) => ({ ...p, [section]: !p[section] }))}>
+          <span>{isOpen ? "▾" : "▸"}</span>
           <span>{hasNote ? "Notes" : "Add note..."}</span>
         </div>
-        <textarea id={"note_" + section} style={{
-          ...css.input, display: hasNote ? "block" : "none", marginTop: 4,
+        {isOpen && <textarea style={{
+          ...css.input, marginTop: 4,
           minHeight: 36, resize: "vertical", fontFamily: "inherit", fontSize: 11,
           lineHeight: 1.4, color: C.textDim,
         }} value={val} onChange={(e) => upSectionNote(section, e.target.value)}
-          placeholder="Implementation notes for this section..." />
+          placeholder="Implementation notes for this section..." />}
       </div>
     );
   };
@@ -788,20 +783,88 @@ function SpellForge() {
             <button style={{ ...css.btnAccent, width: "100%", fontSize: 12, padding: "6px" }} onClick={newSpell}>+ New Spell</button>
           </div>
           <div style={{ flex: 1, overflowY: "auto" }}>
-            {spells.map((s) => (
-              <div key={s.id} onClick={() => selectSpell(s)} style={{
-                padding: "8px 10px", cursor: "pointer", fontSize: 12,
-                background: s.id === selectedId ? C.surface2 : "transparent",
-                borderLeft: s.id === selectedId ? "2px solid " + C.accent : "2px solid transparent",
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-              }}>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{s.name || "Unnamed"}</span>
-                <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
-                  <button style={{ ...css.btnDanger, fontSize: 11, padding: "0 3px" }} title="Duplicate" onClick={(e) => { e.stopPropagation(); duplicateSpell(s); }}>⧉</button>
-                  <button style={{ ...css.btnDanger, fontSize: 13, padding: "0 3px" }} title="Delete" onClick={(e) => { e.stopPropagation(); deleteSpell(s.id); }}>×</button>
+            {(() => {
+              // Find dominant orb for a spell (strictly highest count, no ties)
+              const getDominant = (s) => {
+                const entries = Object.entries(s.orbs || {}).filter(([, v]) => v > 0);
+                if (entries.length === 0) return null;
+                entries.sort((a, b) => b[1] - a[1]);
+                if (entries.length === 1 || entries[0][1] > entries[1][1]) return entries[0][0];
+                return null; // tie
+              };
+              const elOrder = DEF_ELEMENTS.map((e) => e.id);
+              // Group: dominant id → spells (preserving original order within group)
+              const groups = {};
+              elOrder.forEach((id) => (groups[id] = []));
+              groups["_none"] = [];
+              spells.forEach((s) => {
+                const dom = getDominant(s);
+                (groups[dom || "_none"] = groups[dom || "_none"] || []).push(s);
+              });
+              const sorted = [];
+              elOrder.forEach((id) => {
+                if (groups[id] && groups[id].length) {
+                  sorted.push({ type: "header", elId: id });
+                  groups[id].forEach((s) => sorted.push({ type: "spell", spell: s }));
+                }
+              });
+              if (groups["_none"].length) {
+                sorted.push({ type: "header", elId: null });
+                groups["_none"].forEach((s) => sorted.push({ type: "spell", spell: s }));
+              }
+              return sorted.map((item, idx) => {
+                if (item.type === "header") {
+                  const el = DEF_ELEMENTS.find((e) => e.id === item.elId);
+                  return (
+                    <div key={"hdr_" + (item.elId || "mixed") + idx} style={{
+                      padding: "4px 10px", fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+                      color: el ? el.color : C.textDim, letterSpacing: "0.08em",
+                      background: el ? el.color + "08" : "transparent",
+                      borderBottom: "1px solid " + (el ? el.color + "20" : C.border),
+                      display: "flex", alignItems: "center", gap: 6,
+                    }}>
+                      {el && <div style={{ width: 6, height: 6, borderRadius: "50%", background: el.color }} />}
+                      {el ? el.name : "Mixed"}
+                    </div>
+                  );
+                }
+                const s = item.spell;
+                const orbDots = [];
+                Object.entries(s.orbs || {}).forEach(([id, count]) => {
+                  const el = DEF_ELEMENTS.find((e) => e.id === id);
+                  if (!el || count <= 0) return;
+                  for (let i = 0; i < count; i++) orbDots.push(el);
+                });
+                return (
+                <div key={s.id} onClick={() => selectSpell(s)} style={{
+                  padding: "8px 10px", cursor: "pointer", fontSize: 12,
+                  background: s.id === selectedId ? C.surface2 : "transparent",
+                  borderLeft: s.id === selectedId ? "2px solid " + C.accent : "2px solid transparent",
+                  display: "flex", flexDirection: "column", gap: 4,
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, color: C.text }}>{s.name || "Unnamed"}</span>
+                    <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                      <button style={{ ...css.btnDanger, fontSize: 11, padding: "0 3px" }} title="Duplicate" onClick={(e) => { e.stopPropagation(); duplicateSpell(s); }}>⧉</button>
+                      <button style={{ ...css.btnDanger, fontSize: 13, padding: "0 3px" }} title="Delete" onClick={(e) => { e.stopPropagation(); deleteSpell(s.id); }}>×</button>
+                    </div>
+                  </div>
+                  {orbDots.length > 0 && (
+                    <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                      {orbDots.map((el, i) => (
+                        <div key={i} title={el.name} style={{
+                          width: 10, height: 10, borderRadius: "50%",
+                          background: el.color,
+                          border: "1px solid " + el.color + "80",
+                          boxShadow: "0 0 3px " + el.color + "40",
+                        }} />
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+                );
+              });
+            })()}
             {spells.length === 0 && <div style={{ padding: 12, color: C.textDim, fontSize: 11, textAlign: "center" }}>No spells yet</div>}
           </div>
         </div>
@@ -845,7 +908,7 @@ function SpellForge() {
                 {targeterDef && targeterDef.configFields && targeterDef.configFields.length > 0 && (
                   <div style={{ marginTop: 4 }}>{renderConfigFields(targeterDef.configFields, draft.targeterConfig || {}, upTargeterConfig, "targeter_" + draft.targeter)}</div>
                 )}
-                <SectionNote section="targeter" />
+                {sectionNote("targeter")}
               </div>
 
               {/* Stencil */}
@@ -863,7 +926,7 @@ function SpellForge() {
                   <span style={css.label}>Scale</span>
                   <input style={{ ...css.input, width: 60 }} type="number" value={draft.stencilScale} onChange={(e) => up("stencilScale", e.target.value)} />
                 </div>}
-                <SectionNote section="stencil" />
+                {sectionNote("stencil")}
               </div>
 
               {/* Selection */}
@@ -902,7 +965,7 @@ function SpellForge() {
                     );
                   })}
                 </div>
-                <SectionNote section="selection" />
+                {sectionNote("selection")}
               </div>
 
               {/* Resolution */}
@@ -917,7 +980,7 @@ function SpellForge() {
                     {renderConfigFields(resDef.configFields, draft.config || {}, upConfig, draft.resolution)}
                   </div>
                 )}
-                <SectionNote section="resolution" />
+                {sectionNote("resolution")}
               </div>
 
               {/* Keywords */}
@@ -948,7 +1011,7 @@ function SpellForge() {
                   );
                 })}
                 {(!draft.keywords || draft.keywords.length === 0) && <div style={{ color: C.textDim, fontSize: 11 }}>No keywords added</div>}
-                <SectionNote section="keywords" />
+                {sectionNote("keywords")}
               </div>
 
               {/* Excess */}
@@ -994,7 +1057,7 @@ function SpellForge() {
                   </div>
                 ))}
                 {(!draft.excess || draft.excess.length === 0) && <div style={{ color: C.textDim, fontSize: 11 }}>No excess rules</div>}
-                <SectionNote section="excess" />
+                {sectionNote("excess")}
               </div>
 
               <div style={{ display: "flex", gap: 8, marginBottom: 40 }}>
