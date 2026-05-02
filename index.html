@@ -140,29 +140,38 @@ function toYaml(s, reg) {
   L.push("- name: " + (s.name || "Unnamed"));
   const orbs = Object.entries(s.orbs || {}).filter(([, v]) => v > 0);
   if (orbs.length) L.push("  orbs: { " + orbs.map(([k, v]) => k + ": " + v).join(", ") + " }");
-  if (s.hasStencil && s.stencilShape) L.push("  stencil: " + s.stencilShape + ", " + (s.stencilScale || 1));
+  if (s.hasStencil && s.stencilShape) L.push("  stencil: " + s.stencilShape);
   let t = s.targeter;
-  const tCfg = Object.entries(s.targeterConfig || {}).filter(([, v]) => v !== "" && v != null);
-  if (tCfg.length) t += "(" + tCfg.map(([k, v]) => k + "=" + v).join(", ") + ")";
+  const tDef = reg.targeters.find((x) => x.id === s.targeter);
+  if (tDef && tDef.configFields) {
+    const structTCfg = tDef.configFields.filter((f) => f.type === "checkbox" || f.type === "select" || f.type === "stencil" || f.type === "element" || f.type === "spell");
+    const tVals = structTCfg.map((f) => [f.key, (s.targeterConfig || {})[f.key]]).filter(([, v]) => v !== "" && v != null);
+    if (tVals.length) t += "(" + tVals.map(([k, v]) => k + "=" + v).join(", ") + ")";
+  }
   L.push("  targeter: " + t);
   let sel = s.selStrategy;
-  const sCfg = Object.entries(s.selConfig || {}).filter(([, v]) => v !== "" && v != null);
-  if (sCfg.length) sel += "(" + sCfg.map(([k, v]) => k + "=" + v).join(", ") + ")";
   for (const m of s.selMods || []) {
     const md = reg.selMods.find((x) => x.id === m);
-    const mCfg = Object.entries((s.selModConfigs && s.selModConfigs[m]) || {}).filter(([, v]) => v !== "" && v != null);
-    if (mCfg.length) sel += " + " + m + "(" + mCfg.map(([k, v]) => k + "=" + v).join(", ") + ")";
+    const mFields = md && md.configFields ? md.configFields.filter((f) => f.type === "select" || f.type === "checkbox") : [];
+    const mVals = mFields.map((f) => [f.key, ((s.selModConfigs && s.selModConfigs[m]) || {})[f.key]]).filter(([, v]) => v !== "" && v != null);
+    if (mVals.length) sel += " + " + m + "(" + mVals.map(([k, v]) => k + "=" + v).join(", ") + ")";
     else sel += " + " + m;
   }
   L.push("  selection: " + sel);
+  const rDef = reg.resolutions.find((x) => x.id === s.resolution);
   L.push("  resolution: " + s.resolution);
-  const cfg = Object.entries(s.config || {}).filter(([, v]) => v !== "" && v != null);
-  if (cfg.length) { L.push("  config:"); cfg.forEach(([k, v]) => L.push("    " + k + ": " + v)); }
+  if (rDef && rDef.configFields) {
+    const structCfg = rDef.configFields.filter((f) => f.type === "checkbox" || f.type === "select" || f.type === "stencil" || f.type === "element" || f.type === "spell");
+    const vals = structCfg.map((f) => [f.key, (s.config || {})[f.key]]).filter(([, v]) => v !== "" && v != null);
+    if (vals.length) { L.push("  config:"); vals.forEach(([k, v]) => L.push("    " + k + ": " + v)); }
+  }
   if (s.keywords && s.keywords.length) {
     L.push("  keywords:");
     s.keywords.forEach((kw) => {
-      const pp = Object.entries(kw.config || {}).filter(([, v]) => v !== "").map(([k, v]) => k + "=" + v).join(", ");
-      let line = kw._keyword_type + "(" + pp + ")";
+      const kwDef = reg.keywords.find((k) => k.id === kw._keyword_type);
+      const structFields = kwDef ? kwDef.configFields.filter((f) => f.type === "select" || f.type === "checkbox" || f.type === "stencil" || f.type === "element" || f.type === "spell") : [];
+      const pp = structFields.map((f) => [f.key, (kw.config || {})[f.key]]).filter(([, v]) => v !== "" && v != null).map(([k, v]) => k + "=" + v).join(", ");
+      let line = pp ? kw._keyword_type + "(" + pp + ")" : kw._keyword_type;
       if (kw.tick) line += " + Tick(" + kw.tick + ")";
       if (kw.chance) line += " + Chance(" + kw.chance + ")";
       L.push("    - " + line);
@@ -172,8 +181,8 @@ function toYaml(s, reg) {
   if (exc.length) {
     L.push("  excess:");
     exc.forEach((e) => {
-      const ops = e.ops.map((o) => o.op + " " + o.target + " " + o.scalar).join(" + ");
-      L.push("    " + e.element + ": " + ops);
+      const ops = e.ops.filter((o) => o.target).map((o) => o.op + " " + o.target).join(" + ");
+      if (ops) L.push("    " + e.element + ": " + ops);
     });
   }
   if (s.flavor) L.push('  flavor: "' + s.flavor + '"');
@@ -561,7 +570,7 @@ function SpellForge() {
               {getFieldOptions(resId || "", f.key, f.options).map((o) => <option key={o} value={o} />)}
             </datalist>
           </div>
-        ) : <input style={{ ...css.input, flex: 1 }} type={f.type || "text"} placeholder={f.ph || f.placeholder || ""} value={configObj[f.key] || ""} onChange={(e) => updateFn(f.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()} />}
+        ) : <span style={{ fontSize: 10, padding: "2px 6px", background: C.surface, border: "1px solid " + C.border, borderRadius: 3, color: C.textDim, fontStyle: "italic" }}>set in editor</span>}
       </div>
     ); });
   };
@@ -923,8 +932,6 @@ function SpellForge() {
                   <select style={{ ...css.select, flex: 1 }} value={draft.stencilShape} onChange={(e) => up("stencilShape", e.target.value)}>
                     {reg.shapes.map((sh) => <option key={sh} value={sh}>{sh}</option>)}
                   </select>
-                  <span style={css.label}>Scale</span>
-                  <input style={{ ...css.input, width: 60 }} type="number" value={draft.stencilScale} onChange={(e) => up("stencilScale", e.target.value)} />
                 </div>}
                 {sectionNote("stencil")}
               </div>
@@ -933,7 +940,7 @@ function SpellForge() {
               <div style={css.section}>
                 <div style={css.sectionTitle}><span>◆</span> Selection</div>
                 <div style={css.row}><span style={css.label}>Strategy</span><select style={{ ...css.select, flex: 1 }} value={draft.selStrategy} onChange={(e) => { up("selStrategy", e.target.value); up("selConfig", {}); }}>
-                  {reg.selections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {reg.selections.map((s) => <option key={s.id} value={s.id}>{s.name}{s.desc ? " — " + s.desc : ""}</option>)}
                 </select></div>
                 {selDef && selDef.configFields && selDef.configFields.length > 0 && (
                   <div style={{ marginTop: 4 }}>{renderConfigFields(selDef.configFields, draft.selConfig || {}, upSelConfig, "sel_" + draft.selStrategy)}</div>
@@ -955,10 +962,10 @@ function SpellForge() {
                               <option value="">—</option>
                               {getFieldOptions(m.id, f.key, f.options).map((o) => <option key={o} value={o}>{o}</option>)}
                             </select>
+                          ) : f.type === "checkbox" ? (
+                            <input key={f.key} type="checkbox" checked={modCfg[f.key] === "true"} onChange={(e) => upSelModConfig(m.id, f.key, e.target.checked ? "true" : "")} />
                           ) : (
-                            <input key={f.key} style={{ ...css.input, width: 40, padding: "3px 5px", fontSize: 11 }} placeholder={f.label || f.key}
-                              value={modCfg[f.key] || ""}
-                              onChange={(e) => upSelModConfig(m.id, f.key, e.target.value)} />
+                            <span key={f.key} style={{ fontSize: 9, padding: "2px 5px", background: C.surface, border: "1px solid " + C.border, borderRadius: 2, color: C.textDim }}>{f.label || f.key}</span>
                           )
                         ))}
                       </div>
@@ -976,7 +983,6 @@ function SpellForge() {
                 </select></div>
                 {resDef && resDef.configFields && resDef.configFields.length > 0 && (
                   <div style={{ marginTop: 6 }}>
-                    <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Config</div>
                     {renderConfigFields(resDef.configFields, draft.config || {}, upConfig, draft.resolution)}
                   </div>
                 )}
@@ -989,8 +995,8 @@ function SpellForge() {
                 {(draft.keywords || []).map((kw, i) => {
                   const kwDef = reg.keywords.find((k) => k.id === kw._keyword_type);
                   return (
-                    <div key={i} style={{ marginBottom: 8, padding: 8, background: C.surface2, borderRadius: 4, border: "1px solid " + C.border }}>
-                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
+                    <div key={i} style={{ marginBottom: 6, padding: "6px 8px", background: C.surface2, borderRadius: 4, border: "1px solid " + C.border }}>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: kwDef && kwDef.configFields && kwDef.configFields.length > 0 ? 4 : 0 }}>
                         <select style={{ ...css.select, fontSize: 12, fontWeight: 600 }} value={kw._keyword_type} onChange={(e) => upKeyword(i, "_keyword_type", e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
                           {reg.keywords.map((k) => <option key={k.id} value={k.id}>{k.id}</option>)}
                         </select>
@@ -1028,18 +1034,32 @@ function SpellForge() {
                       <button style={css.btnDanger} onClick={() => removeExcess(ei)}>×</button>
                     </div>
                     {(ex.ops || []).map((op, oi) => {
-                      // Build target options from spell's keywords + config
-                      const targetOpts = [];
+                      // Build grouped target options
+                      const groups = [];
+                      // Stencil targets
+                      if (draft.hasStencil) {
+                        groups.push({ label: "Stencil", opts: ["stencil.scale"] });
+                      }
+                      // Targeter config targets
+                      if (targeterDef && targeterDef.configFields && targeterDef.configFields.length) {
+                        const opts = targeterDef.configFields.filter((f) => f.type === "number" || f.type === "text").map((f) => "targeter." + f.key);
+                        if (opts.length) groups.push({ label: "Targeter", opts });
+                      }
+                      // Resolution config targets
+                      if (resDef && resDef.configFields && resDef.configFields.length) {
+                        const opts = resDef.configFields.filter((f) => f.type === "number" || f.type === "text").map((f) => "config." + f.key);
+                        if (opts.length) groups.push({ label: "Resolution", opts });
+                      }
+                      // Keyword targets (deduplicated)
+                      const kwOpts = [];
                       (draft.keywords || []).forEach((kw) => {
                         const kwDef = reg.keywords.find((k) => k.id === kw._keyword_type);
                         if (kwDef && kwDef.configFields) kwDef.configFields.forEach((f) => {
                           const t = kw._keyword_type + "." + f.key;
-                          if (!targetOpts.includes(t)) targetOpts.push(t);
+                          if (!kwOpts.includes(t)) kwOpts.push(t);
                         });
                       });
-                      if (resDef) resDef.configFields.forEach((f) => {
-                        targetOpts.push("config." + f.key);
-                      });
+                      if (kwOpts.length) groups.push({ label: "Keywords", opts: kwOpts });
                       return (
                       <div key={oi} style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 3 }}>
                         <select style={{ ...css.select, width: 60, fontSize: 11 }} value={op.op} onChange={(e) => upExcessOp(ei, oi, "op", e.target.value)}>
@@ -1047,9 +1067,12 @@ function SpellForge() {
                         </select>
                         <select style={{ ...css.select, flex: 1, fontSize: 11 }} value={op.target} onChange={(e) => upExcessOp(ei, oi, "target", e.target.value)}>
                           <option value="">— Select target —</option>
-                          {targetOpts.map((t) => <option key={t} value={t}>{t}</option>)}
+                          {groups.map((g) => (
+                            <optgroup key={g.label} label={g.label}>
+                              {g.opts.map((t) => <option key={t} value={t}>{t}</option>)}
+                            </optgroup>
+                          ))}
                         </select>
-                        <input style={{ ...css.input, width: 50, fontSize: 11, padding: "3px 6px" }} placeholder="2" value={op.scalar} onChange={(e) => upExcessOp(ei, oi, "scalar", e.target.value)} />
                         <button style={{ ...css.btnDanger, fontSize: 12, padding: "0 4px" }} onClick={() => removeExcessOp(ei, oi)}>×</button>
                       </div>
                       );
