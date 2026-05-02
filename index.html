@@ -135,6 +135,23 @@ function makeSpell() {
   };
 }
 
+// Auto-detect field type from common key names
+function inferFieldType(key) {
+  const k = key.toLowerCase().replace(/[_\s]/g, "");
+  if (k === "type" || k === "element" || k === "damagetype" || k === "orbtype") return "element";
+  if (k === "stencil" || k === "shape" || k === "aoeshape") return "stencil";
+  if (k === "spell" || k === "spawnspell" || k === "subspell") return "spell";
+  if (k === "travel" || k === "trigger" || k === "mode") return "select";
+  if (k.startsWith("is") || k.startsWith("has") || k.startsWith("enable") || k.startsWith("activate") || k === "piercing" || k === "attach") return "checkbox";
+  return null;
+}
+
+const STRUCTURAL_TYPES = new Set(["checkbox", "select", "stencil", "element", "spell"]);
+function isStructuralField(f) {
+  const effective = (f.type === "text" || f.type === "number") ? (inferFieldType(f.key) || f.type) : f.type;
+  return STRUCTURAL_TYPES.has(effective);
+}
+
 function toYaml(s, reg) {
   const L = [];
   L.push("- name: " + (s.name || "Unnamed"));
@@ -144,15 +161,14 @@ function toYaml(s, reg) {
   let t = s.targeter;
   const tDef = reg.targeters.find((x) => x.id === s.targeter);
   if (tDef && tDef.configFields) {
-    const structTCfg = tDef.configFields.filter((f) => f.type === "checkbox" || f.type === "select" || f.type === "stencil" || f.type === "element" || f.type === "spell");
-    const tVals = structTCfg.map((f) => [f.key, (s.targeterConfig || {})[f.key]]).filter(([, v]) => v !== "" && v != null);
+    const tVals = tDef.configFields.filter(isStructuralField).map((f) => [f.key, (s.targeterConfig || {})[f.key]]).filter(([, v]) => v !== "" && v != null);
     if (tVals.length) t += "(" + tVals.map(([k, v]) => k + "=" + v).join(", ") + ")";
   }
   L.push("  targeter: " + t);
   let sel = s.selStrategy;
   for (const m of s.selMods || []) {
     const md = reg.selMods.find((x) => x.id === m);
-    const mFields = md && md.configFields ? md.configFields.filter((f) => f.type === "select" || f.type === "checkbox") : [];
+    const mFields = md && md.configFields ? md.configFields.filter(isStructuralField) : [];
     const mVals = mFields.map((f) => [f.key, ((s.selModConfigs && s.selModConfigs[m]) || {})[f.key]]).filter(([, v]) => v !== "" && v != null);
     if (mVals.length) sel += " + " + m + "(" + mVals.map(([k, v]) => k + "=" + v).join(", ") + ")";
     else sel += " + " + m;
@@ -161,15 +177,14 @@ function toYaml(s, reg) {
   const rDef = reg.resolutions.find((x) => x.id === s.resolution);
   L.push("  resolution: " + s.resolution);
   if (rDef && rDef.configFields) {
-    const structCfg = rDef.configFields.filter((f) => f.type === "checkbox" || f.type === "select" || f.type === "stencil" || f.type === "element" || f.type === "spell");
-    const vals = structCfg.map((f) => [f.key, (s.config || {})[f.key]]).filter(([, v]) => v !== "" && v != null);
+    const vals = rDef.configFields.filter(isStructuralField).map((f) => [f.key, (s.config || {})[f.key]]).filter(([, v]) => v !== "" && v != null);
     if (vals.length) { L.push("  config:"); vals.forEach(([k, v]) => L.push("    " + k + ": " + v)); }
   }
   if (s.keywords && s.keywords.length) {
     L.push("  keywords:");
     s.keywords.forEach((kw) => {
       const kwDef = reg.keywords.find((k) => k.id === kw._keyword_type);
-      const structFields = kwDef ? kwDef.configFields.filter((f) => f.type === "select" || f.type === "checkbox" || f.type === "stencil" || f.type === "element" || f.type === "spell") : [];
+      const structFields = kwDef && kwDef.configFields ? kwDef.configFields.filter(isStructuralField) : [];
       const pp = structFields.map((f) => [f.key, (kw.config || {})[f.key]]).filter(([, v]) => v !== "" && v != null).map(([k, v]) => k + "=" + v).join(", ");
       let line = pp ? kw._keyword_type + "(" + pp + ")" : kw._keyword_type;
       if (kw.tick) line += " + Tick(" + kw.tick + ")";
@@ -538,32 +553,34 @@ function SpellForge() {
     if (!visible.length) return null;
     return visible.map((f) => {
       const depth = getFieldDepth(f, fields);
+      // Auto-detect effective type from key name if field type is generic
+      const effectiveType = (f.type === "text" || f.type === "number") ? (inferFieldType(f.key) || f.type) : f.type;
       return (
       <div key={f.key} style={{ ...css.row, marginLeft: depth * 16 }}>
         <span style={{ ...css.label, minWidth: 90 }}>{depth > 0 && <span style={{ color: C.accent, marginRight: 4, fontSize: 10 }}>↳</span>}{f.label || f.key}</span>
-        {f.type === "checkbox" ? (
+        {effectiveType === "checkbox" ? (
           <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", flex: 1 }}>
             <input type="checkbox" checked={configObj[f.key] === "true" || configObj[f.key] === true} onChange={(e) => updateFn(f.key, e.target.checked ? "true" : "")} />
             <span style={{ fontSize: 12, color: configObj[f.key] === "true" || configObj[f.key] === true ? C.text : C.textDim }}>
               {configObj[f.key] === "true" || configObj[f.key] === true ? "Yes" : "No"}
             </span>
           </label>
-        ) : f.type === "stencil" ? (
+        ) : effectiveType === "stencil" ? (
           <select style={{ ...css.select, flex: 1 }} value={configObj[f.key] || ""} onChange={(e) => updateFn(f.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
             <option value="">—</option>
             {reg.shapes.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-        ) : f.type === "element" ? (
+        ) : effectiveType === "element" ? (
           <select style={{ ...css.select, flex: 1 }} value={configObj[f.key] || ""} onChange={(e) => updateFn(f.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
             <option value="">—</option>
             {reg.elements.map((el) => <option key={el.id} value={el.name}>{el.name}</option>)}
           </select>
-        ) : f.type === "spell" ? (
+        ) : effectiveType === "spell" ? (
           <select style={{ ...css.select, flex: 1 }} value={configObj[f.key] || ""} onChange={(e) => updateFn(f.key, e.target.value)} onKeyDown={(e) => e.stopPropagation()}>
             <option value="">—</option>
             {spells.filter((s) => s.name).map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
           </select>
-        ) : f.type === "select" ? (
+        ) : effectiveType === "select" ? (
           <div style={{ flex: 1, position: "relative" }}>
             <input list={"dl_" + (resId || "") + "_" + f.key} style={{ ...css.input }} value={configObj[f.key] || ""} onChange={(e) => updateFn(f.key, e.target.value)} placeholder="Type or select..." onKeyDown={(e) => e.stopPropagation()} />
             <datalist id={"dl_" + (resId || "") + "_" + f.key}>
@@ -596,11 +613,19 @@ function SpellForge() {
     if (!regForm[cat] || !regForm[cat].id) return;
     const item = { ...regForm[cat], id: capitalize(regForm[cat].id), name: capitalize(regForm[cat].name || "") };
     if (cat === "keywords") {
-      item.configFields = (item.paramStr || "").split(",").filter(Boolean).map((p) => ({ key: p.trim(), label: capitalize(p.trim()), type: "text" }));
+      item.configFields = (item.paramStr || "").split(",").filter(Boolean).map((p) => {
+        const key = p.trim();
+        const inferred = inferFieldType(key);
+        return { key, label: capitalize(key), type: inferred || "text" };
+      });
       delete item.paramStr;
     }
     if (cat === "selections" || cat === "targeters" || cat === "resolutions" || cat === "selMods") {
-      item.configFields = (item.paramStr || "").split(",").filter(Boolean).map((p) => ({ key: p.trim(), label: capitalize(p.trim()), type: "number" }));
+      item.configFields = (item.paramStr || "").split(",").filter(Boolean).map((p) => {
+        const key = p.trim();
+        const inferred = inferFieldType(key);
+        return { key, label: capitalize(key), type: inferred || "number" };
+      });
       delete item.paramStr;
     }
     fbSet("spellforge/customRegistry/" + cat + "/" + item.id, item);
@@ -1273,7 +1298,11 @@ function SpellForge() {
                           <input style={{ ...css.input, width: 80, fontSize: 11, padding: "3px 6px" }}
                             placeholder="Key"
                             value={(newFieldInput[id] && newFieldInput[id].key) || ""}
-                            onChange={(e) => setNewFieldInput((p) => ({ ...p, [id]: { ...p[id], key: e.target.value } }))}
+                            onChange={(e) => {
+                              const key = e.target.value;
+                              const inferred = inferFieldType(key);
+                              setNewFieldInput((p) => ({ ...p, [id]: { ...p[id], key, ...(inferred && !p[id]?.typeManual ? { type: inferred } : {}) } }));
+                            }}
                           />
                           <input style={{ ...css.input, flex: 1, fontSize: 11, padding: "3px 6px" }}
                             placeholder="Label"
@@ -1282,7 +1311,7 @@ function SpellForge() {
                           />
                           <select style={{ ...css.select, width: 90, fontSize: 11, padding: "3px 4px" }}
                             value={(newFieldInput[id] && newFieldInput[id].type) || "number"}
-                            onChange={(e) => setNewFieldInput((p) => ({ ...p, [id]: { ...p[id], type: e.target.value } }))}
+                            onChange={(e) => setNewFieldInput((p) => ({ ...p, [id]: { ...p[id], type: e.target.value, typeManual: true } }))}
                           >
                             {FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                           </select>
